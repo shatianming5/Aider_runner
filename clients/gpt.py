@@ -9,7 +9,12 @@ Paper: https://arxiv.org/abs/2303.08774
 import os
 import asyncio
 import tiktoken
-import wandb
+
+try:
+    import wandb  # type: ignore
+except Exception:
+    wandb = None  # type: ignore
+
 from aiopslab.orchestrator import Orchestrator
 from aiopslab.orchestrator.problems.registry import ProblemRegistry
 from clients.utils.llm import GPTClient
@@ -111,6 +116,10 @@ if __name__ == "__main__":
     use_wandb = os.getenv("USE_WANDB", "false").lower() == "true"
 
     if use_wandb:
+        if wandb is None:
+            raise RuntimeError(
+                "USE_WANDB=true but wandb is not installed. Install it (e.g., `poetry add wandb`) or unset USE_WANDB."
+            )
         # Initialize wandb running
         wandb.init(project="AIOpsLab", entity="AIOpsLab")
 
