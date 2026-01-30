@@ -9,12 +9,17 @@ def select_model():
     import requests
 
     base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com")
-    response = requests.get(f"{base_url}/v1/models", headers={
-        "Authorization": f"Bearer {os.getenv('OPENAI_API_KEY')}"
-    })
+    try:
+        response = requests.get(f"{base_url}/v1/models", headers={
+            "Authorization": f"Bearer {os.getenv('OPENAI_API_KEY')}"
+        })
+        response.raise_for_status()
+    except requests.exceptions.RequestException as e:
+        raise RuntimeError(f"Failed to fetch models: {e}")
 
-    if response.status_code != 200:
-        raise RuntimeError(f"Failed to fetch models: {response.text}")
+    models = response.json().get("data", [])
+    if not models:
+        raise RuntimeError("No models found in the response.")
 
     models = response.json().get("data", [])
     priority = ["gpt-4o-msra", "gpt-4o", "gpt-4", "gpt-35-turbo"]
