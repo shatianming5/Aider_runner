@@ -1,6 +1,6 @@
-"""Naive GPT4 client (with shell access) for AIOpsLab.
+"""Naive GPT client (with shell access) for AIOpsLab.
 
-Achiam, Josh, Steven Adler, Sandhini Agarwal, Lama Ahmad, Ilge Akkaya, Florencia Leoni Aleman, Diogo Almeida et al. 
+Achiam, Josh, Steven Adler, Sandhini Agarwal, Lama Ahmad, Ilge Akkaya, Florencia Leoni Aleman, Diogo Almeida et al.
 "Gpt-4 technical report." arXiv preprint arXiv:2303.08774 (2023).
 
 Code: https://openai.com/index/gpt-4-research/
@@ -20,11 +20,13 @@ from clients.utils.templates import DOCS_SHELL_ONLY
 # Load environment variables from the .env file
 load_dotenv()
 
+
 def count_message_tokens(message, enc):
     # Each message format adds ~4 tokens of overhead
     tokens = 4  # <|start|>role/name + content + <|end|>
     tokens += len(enc.encode(message.get("content", "")))
     return tokens
+
 
 def trim_history_to_token_limit(history, max_tokens=120000, model="gpt-4"):
     enc = tiktoken.encoding_for_model(model)
@@ -38,9 +40,9 @@ def trim_history_to_token_limit(history, max_tokens=120000, model="gpt-4"):
 
     if last_msg_tokens > max_tokens:
         # If even the last message is too big, truncate its content
-        truncated_content = enc.decode(enc.encode(last_msg["content"])[:max_tokens - 4])
+        truncated_content = enc.decode(enc.encode(last_msg["content"])[: max_tokens - 4])
         return [{"role": last_msg["role"], "content": truncated_content}]
-    
+
     trimmed.insert(0, last_msg)
     total_tokens += last_msg_tokens
 
@@ -54,11 +56,14 @@ def trim_history_to_token_limit(history, max_tokens=120000, model="gpt-4"):
 
     return trimmed
 
+
 class GPTAgent:
     def __init__(self):
         self.history = []
+        # Model is controlled by OPENAI_MODEL and/or set by benchmark runner.
         self.llm = GPTClient()
-    
+        self.model = getattr(self.llm, "model", os.getenv("OPENAI_MODEL", "gpt-5.2"))
+
     def test(self):
         return self.llm.run([{"role": "system", "content": "hello"}])
 
@@ -67,9 +72,7 @@ class GPTAgent:
 
         self.shell_api = self._filter_dict(apis, lambda k, _: "exec_shell" in k)
         self.submit_api = self._filter_dict(apis, lambda k, _: "submit" in k)
-        stringify_apis = lambda apis: "\n\n".join(
-            [f"{k}\n{v}" for k, v in apis.items()]
-        )
+        stringify_apis = lambda apis: "\n\n".join([f"{k}\n{v}" for k, v in apis.items()])
 
         self.system_message = DOCS_SHELL_ONLY.format(
             prob_desc=problem_desc,
@@ -83,7 +86,7 @@ class GPTAgent:
         self.history.append({"role": "user", "content": self.task_message})
 
     async def get_action(self, input) -> str:
-        """Wrapper to interface the agent with OpsBench.
+        """Wrapper to interface the agent with AIOpsLab.
 
         Args:
             input (str): The input from the orchestrator/environment.
@@ -94,7 +97,8 @@ class GPTAgent:
         self.history.append({"role": "user", "content": input})
         trimmed_history = trim_history_to_token_limit(self.history)
         response = self.llm.run(trimmed_history)
-        print(f"===== Agent (GPT-4o-mini) ====\n{response}")
+        model = getattr(self.llm, "model", self.model)
+        print(f"===== Agent ({model}) ====\n{response}")
         self.history.append({"role": "assistant", "content": response[0]})
         return response[0]
 
@@ -105,7 +109,7 @@ class GPTAgent:
 if __name__ == "__main__":
     # Load use_wandb from environment variable with a default of False
     use_wandb = os.getenv("USE_WANDB", "false").lower() == "true"
-    
+
     if use_wandb:
         # Initialize wandb running
         wandb.init(project="AIOpsLab", entity="AIOpsLab")

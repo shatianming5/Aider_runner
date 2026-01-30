@@ -1,31 +1,39 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
 
-"""A common abstraction for a cached LLM inference setup. Currently supports OpenAI's gpt-4-turbo and other models."""
+"""A common abstraction for a cached LLM inference setup.
 
+Currently supports OpenAI-compatible chat completion endpoints, including:
+- OpenAI
+- Azure OpenAI (identity-based auth supported)
+- OpenAI-compatible gateways (via OPENAI_BASE_URL)
+"""
 
 import os
 import json
 import yaml
-from groq import Groq
 from pathlib import Path
-from typing import Optional, List, Dict
+from typing import Optional
 from dataclasses import dataclass
 
 from groq import Groq
 from openai import OpenAI, AzureOpenAI
-from azure.identity import get_bearer_token_provider, AzureCliCredential, ManagedIdentityCredential
+from azure.identity import (
+    get_bearer_token_provider,
+    AzureCliCredential,
+    ManagedIdentityCredential,
+)
 
 from dotenv import load_dotenv
 
 # Load environment variables from the .env file
 load_dotenv()
-"""An common abstraction for a cached LLM inference setup. Currently supports OpenAI's gpt-4-turbo and other models."""
-
 
 CACHE_DIR = Path("./cache_dir")
 CACHE_PATH = CACHE_DIR / "cache.json"
-GPT_MODEL = "gpt-4o"
+
+# Default model can be overridden via OPENAI_MODEL.
+DEFAULT_OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5.2")
 
 
 @dataclass
@@ -66,11 +74,35 @@ class Cache:
             json.dump(self.cache_dict, f, indent=4)
 
 
-class GPTClient:
-    """Abstraction for OpenAI's GPT series model."""
+def _normalize_openai_base_url(base_url: Optional[str]) -> Optional[str]:
+    """
+    Normalize an OpenAI-compatible base URL so it can be safely used with or without an embedded /v1.
+    Examples:
+      - https://api.openai.com      -> https://api.openai.com/v1
+      - https://api.openai.com/v1   -> https://api.openai.com/v1
+      - https://host/prefix/v1/     -> https://host/prefix/v1
+    """
+    if not base_url:
+        return None
+    base_url = base_url.strip().rstrip("/")
+    if base_url.endswith("/v1"):
+        return base_url
+    return f"{base_url}/v1"
 
-    def __init__(self, auth_type: str = "key", api_key: Optional[str] = None, azure_config_file: Optional[str] = None, use_cache: bool = True):
-        self.cache = Cache()
+
+class GPTClient:
+    """Abstraction for OpenAI-compatible GPT series models."""
+
+    def __init__(
+        self,
+        auth_type: str = "key",
+        api_key: Optional[str] = None,
+        azure_config_file: Optional[str] = None,
+        use_cache: bool = True,
+        model: Optional[str] = None,
+    ):
+        self.cache = Cache() if use_cache else None
+        self.model = model or os.getenv("OPENAI_MODEL", DEFAULT_OPENAI_MODEL)
         self.client = self._setup_client(auth_type, api_key, azure_config_file)
 
     def _load_azure_config(self, yaml_file_path: str) -> AzureConfig:
@@ -81,35 +113,50 @@ class GPTClient:
                 api_version=azure_config_data.get("api_version"),
             )
 
-    def _setup_client(self, auth_type: str, api_key: Optional[str], azure_config_file: Optional[str]):
+    def _setup_client(
+        self, auth_type: str, api_key: Optional[str], azure_config_file: Optional[str]
+    ):
         azure_identity_opts = ["cli", "managed_identity"]
         if auth_type == "key":
-            # TODO: support Azure OpenAI client.
-            api_key = api_key or os.getenv("OPENAI_API_KEY")
+            # Support both OPENAI_API_KEY (preferred) and OPENAI_KEY (legacy).
+            api_key = api_key or os.getenv("OPENAI_API_KEY") or os.getenv("OPENAI_KEY")
             if not api_key:
-                raise ValueError("API key must be provided or set in OPENAI_API_KEY environment variable")
+                raise ValueError(
+                    "API key must be provided or set in OPENAI_API_KEY (preferred) / OPENAI_KEY (legacy)."
+                )
+
+            base_url = _normalize_openai_base_url(os.getenv("OPENAI_BASE_URL"))
+            if base_url:
+                return OpenAI(api_key=api_key, base_url=base_url)
             return OpenAI(api_key=api_key)
-        elif auth_type in azure_identity_opts:
+
+        if auth_type in azure_identity_opts:
             if not azure_config_file:
-                raise ValueError("Azure configuration file must be provided for access via managed identity.\n Check AIOpsLab/clients/configs/example_azure_config.yml for an example.")
+                raise ValueError(
+                    "Azure configuration file must be provided for access via managed identity.\n"
+                    "Check AIOpsLab/clients/configs/example_azure_config.yml for an example."
+                )
             azure_config = self._load_azure_config(azure_config_file)
             if auth_type == "cli":
                 credential = AzureCliCredential()
-            elif auth_type == "managed_identity":
+            else:
                 client_id = os.getenv("AZURE_CLIENT_ID")
                 if client_id is None:
-                    raise ValueError("Managed identity selected but AZURE_CLIENT_ID is not set.")
+                    raise ValueError(
+                        "Managed identity selected but AZURE_CLIENT_ID is not set."
+                    )
                 credential = ManagedIdentityCredential(client_id=client_id)
+
             token_provider = get_bearer_token_provider(
                 credential, "https://cognitiveservices.azure.com/.default"
             )
             return AzureOpenAI(
                 api_version=azure_config.api_version,
                 azure_endpoint=azure_config.azure_endpoint,
-                azure_ad_token_provider=token_provider
+                azure_ad_token_provider=token_provider,
             )
-        else:
-            raise ValueError("auth_type must be one of 'key', 'cli', or 'managed_identity'")
+
+        raise ValueError("auth_type must be one of 'key', 'cli', or 'managed_identity'")
 
     def inference(self, payload: list[dict[str, str]]) -> list[str]:
         if self.cache is not None:
@@ -120,7 +167,7 @@ class GPTClient:
         try:
             response = self.client.chat.completions.create(
                 messages=payload,  # type: ignore
-                model=GPT_MODEL,
+                model=self.model,
                 max_tokens=1024,
                 temperature=0.5,
                 top_p=0.95,
@@ -132,7 +179,7 @@ class GPTClient:
             )
         except Exception as e:
             print(f"Exception: {repr(e)}")
-            raise e
+            raise
 
         return [c.message.content for c in response.choices]  # type: ignore
 
@@ -156,8 +203,9 @@ class DeepSeekClient:
             if cache_result is not None:
                 return cache_result
 
-        client = OpenAI(api_key=os.getenv("DEEPSEEK_API_KEY"),
-                        base_url="https://api.deepseek.com")
+        client = OpenAI(
+            api_key=os.getenv("DEEPSEEK_API_KEY"), base_url="https://api.deepseek.com"
+        )
         try:
             response = client.chat.completions.create(
                 messages=payload,  # type: ignore
@@ -168,7 +216,7 @@ class DeepSeekClient:
 
         except Exception as e:
             print(f"Exception: {repr(e)}")
-            raise e
+            raise
 
         return [c.message.content for c in response.choices]  # type: ignore
 
@@ -192,8 +240,10 @@ class QwenClient:
             if cache_result is not None:
                 return cache_result
 
-        client = OpenAI(api_key=os.getenv("DASHSCOPE_API_KEY"),
-                        base_url="https://dashscope.aliyuncs.com/compatible-mode/v1")
+        client = OpenAI(
+            api_key=os.getenv("DASHSCOPE_API_KEY"),
+            base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+        )
         try:
             # TODO: Add constraints for the input context length
             response = client.chat.completions.create(
@@ -203,11 +253,11 @@ class QwenClient:
                 n=1,
                 timeout=60,
                 stop=[],
-                stream=True
+                stream=True,
             )
         except Exception as e:
             print(f"Exception: {repr(e)}")
-            raise e
+            raise
 
         reasoning_content = ""
         answer_content = ""
@@ -219,7 +269,10 @@ class QwenClient:
                 print(chunk.usage)
             else:
                 delta = chunk.choices[0].delta
-                if hasattr(delta, 'reasoning_content') and delta.reasoning_content != None:
+                if (
+                    hasattr(delta, "reasoning_content")
+                    and delta.reasoning_content is not None
+                ):
                     reasoning_content += delta.reasoning_content
                 else:
                     if delta.content != "" and is_answering is False:
@@ -239,18 +292,22 @@ class QwenClient:
 class vLLMClient:
     """Abstraction for local LLM models."""
 
-    def __init__(self,
-                 model="Qwen/Qwen2.5-Coder-3B-Instruct",
-                 repetition_penalty=1.0,
-                 temperature=1.0,
-                 top_p=0.95,
-                 max_tokens=1024):
+    def __init__(
+        self,
+        model="Qwen/Qwen2.5-Coder-3B-Instruct",
+        repetition_penalty=1.0,
+        temperature=1.0,
+        top_p=0.95,
+        max_tokens=1024,
+        base_url: str = "http://localhost:8000/v1",
+    ):
         self.cache = Cache()
         self.model = model
         self.repetition_penalty = repetition_penalty
         self.temperature = temperature
         self.top_p = top_p
         self.max_tokens = max_tokens
+        self.base_url = base_url.rstrip("/")
 
     def inference(self, payload: list[dict[str, str]]) -> list[str]:
         if self.cache is not None:
@@ -258,7 +315,7 @@ class vLLMClient:
             if cache_result is not None:
                 return cache_result
 
-        client = OpenAI(api_key="EMPTY", base_url="http://localhost:8000/v1")
+        client = OpenAI(api_key="EMPTY", base_url=self.base_url)
         try:
             response = client.chat.completions.create(
                 messages=payload,  # type: ignore
@@ -274,7 +331,7 @@ class vLLMClient:
             )
         except Exception as e:
             print(f"Exception: {repr(e)}")
-            raise e
+            raise
 
         return [c.message.content for c in response.choices]  # type: ignore
 
@@ -300,8 +357,7 @@ class OpenRouterClient:
                 return cache_result
 
         client = OpenAI(
-            api_key=os.getenv("OPENROUTER_API_KEY"),
-            base_url="https://openrouter.ai/api/v1"
+            api_key=os.getenv("OPENROUTER_API_KEY"), base_url="https://openrouter.ai/api/v1"
         )
         try:
             response = client.chat.completions.create(
@@ -318,7 +374,7 @@ class OpenRouterClient:
             )
         except Exception as e:
             print(f"Exception: {repr(e)}")
-            raise e
+            raise
 
         return [c.message.content for c in response.choices]  # type: ignore
 
@@ -358,7 +414,7 @@ class LLaMAClient:
             )
         except Exception as e:
             print(f"Exception: {repr(e)}")
-            raise e
+            raise
 
         return [c.message.content for c in response.choices]  # type: ignore
 
