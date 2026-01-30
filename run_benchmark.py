@@ -8,9 +8,10 @@ def select_model():
     """Select the best available model from the OpenAI API."""
     import requests
 
-    base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com")
+    base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com").rstrip("/")
     try:
-        response = requests.get(f"{base_url}/v1/models", headers={
+        url = f"{base_url}/v1/models".replace("//v1", "/v1")
+        response = requests.get(url, headers={
             "Authorization": f"Bearer {os.getenv('OPENAI_API_KEY')}"
         })
         response.raise_for_status()
