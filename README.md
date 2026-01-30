@@ -9,6 +9,11 @@
 [📂Project Structure](#📂project-structure) |
 [📄How to Cite](#📄how-to-cite)
 
+## Documentation
+
+- [Runbook](docs/RUNBOOK.md)
+- [Deployment](docs/DEPLOYMENT.md)
+
 [![ArXiv Link](https://img.shields.io/badge/arXiv-2501.06706-red?logo=arxiv)](https://arxiv.org/pdf/2501.06706)
 [![ArXiv Link](https://img.shields.io/badge/arXiv-2407.12165-red?logo=arxiv)](https://arxiv.org/pdf/2407.12165)
 </div>

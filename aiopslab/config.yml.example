@@ -1,4 +1,5 @@
 # Kubernetes control node
+# NOTE: Copy this file to `config.yml` before running the application.
 k8s_host: control_node_hostname # Put `localhost` if running on cluster; put `kind` if using kind cluster; put a hostname if managing a remote cluster, e.g., apt035.apt.emulab.net
 k8s_user: your_username
 
