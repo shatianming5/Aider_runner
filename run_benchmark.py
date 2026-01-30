@@ -10,7 +10,10 @@ def select_model():
 
     base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com").rstrip("/")
     try:
-        url = f"{base_url}/v1/models".replace("//v1", "/v1")
+        if base_url.endswith("/v1"):
+            url = f"{base_url}/models"
+        else:
+            url = f"{base_url}/v1/models"
         response = requests.get(url, headers={
             "Authorization": f"Bearer {os.getenv('OPENAI_API_KEY')}"
         })
