@@ -224,8 +224,13 @@ def main() -> int:
     parser.add_argument(
         "--reset",
         choices=("none", "soft", "medium", "hard"),
-        default="hard",
-        help="cleanup level before running (default: hard)",
+        default="soft",
+        help="cleanup level before running (default: soft). NOTE: medium/hard are destructive.",
+    )
+    parser.add_argument(
+        "--allow-destructive",
+        action="store_true",
+        help="allow destructive cleanup (required for --reset medium/hard).",
     )
     parser.add_argument(
         "--model",
@@ -245,6 +250,13 @@ def main() -> int:
     parser.add_argument("--skip-tests", action="store_true", help="skip `python -m pytest -q`")
     parser.add_argument("--skip-bootstrap", action="store_true", help="skip tools/bootstrap_macos.py")
     args = parser.parse_args()
+
+    if args.reset in ("medium", "hard") and not args.allow_destructive:
+        print(
+            "ERROR: --reset medium/hard is destructive and requires --allow-destructive.",
+            file=sys.stderr,
+        )
+        return 2
 
     root = repo_root()
     aider_exe = find_aider_exe(root)

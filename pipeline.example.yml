@@ -1,0 +1,62 @@
+version: 1
+
+security:
+  # safe: blocks some destructive commands by default (sudo/brew uninstall/docker prune/...)
+  # system: looser (still blocks rm -rf /), use with care
+  mode: safe
+  # allowlist: []   # optional regex patterns; if set, ONLY matching commands are allowed
+  # denylist: []    # optional regex patterns; always blocked
+  # max_cmd_seconds: 600
+  # max_total_seconds: 3600
+
+tests:
+  # Default if omitted (or if you don't pass --test-cmd): "pytest -q"
+  cmds: [pytest -q]
+  # timeout_seconds: 1200
+  # retries: 0
+  # env: {FOO: bar}
+  # workdir: .
+
+auth:
+  # Optional auth/login steps (use `--unattended guided` if interactive is true).
+  # steps: [docker login --password-stdin ...]
+  interactive: false
+  # timeout_seconds: 600
+  # retries: 0
+
+tooling:
+  # Optional: let runner bootstrap macOS toolchain (brew + colima).
+  ensure_tools: false
+
+  # Optional: let runner ensure a kind cluster exists.
+  ensure_kind_cluster: true
+  kind_cluster_name: kind
+  # kind_config: kind/kind-config.yaml
+
+deploy:
+  # setup_cmds: [kubectl apply -f k8s/]
+  # health_cmds: [kubectl rollout status deploy/myapp --timeout=120s]
+  # teardown_cmds: [kubectl delete -f k8s/ --ignore-not-found]
+  # timeout_seconds: 900
+  # retries: 0
+  # env: {KUBECONFIG: /path/to/kubeconfig}
+  # workdir: .
+  teardown_policy: always  # always|on_success|on_failure|never
+
+  kubectl_dump:
+    enabled: true
+    # namespace: default
+    # label_selector: app=myapp
+    include_logs: false
+
+benchmark:
+  # run_cmds: [python benchmark/run.py --out metrics.json]
+  # timeout_seconds: 1800
+  # retries: 0
+  # env: {BENCH_MODE: quick}
+  # workdir: .
+  # metrics_path: metrics.json
+  required_keys: []
+
+artifacts:
+  out_dir: .aider_fsm/artifacts
