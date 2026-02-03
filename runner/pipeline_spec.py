@@ -39,6 +39,13 @@ class PipelineSpec:
     kubectl_dump_label_selector: str | None = None
     kubectl_dump_include_logs: bool = False
 
+    # rollout (optional)
+    rollout_run_cmds: list[str] = None  # type: ignore[assignment]
+    rollout_timeout_seconds: int | None = None
+    rollout_retries: int = 0
+    rollout_env: dict[str, str] = None  # type: ignore[assignment]
+    rollout_workdir: str | None = None
+
     # benchmark
     benchmark_run_cmds: list[str] = None  # type: ignore[assignment]
     benchmark_timeout_seconds: int | None = None
@@ -78,6 +85,7 @@ class PipelineSpec:
             "deploy_setup_cmds",
             "deploy_health_cmds",
             "deploy_teardown_cmds",
+            "rollout_run_cmds",
             "benchmark_run_cmds",
             "benchmark_required_keys",
             "auth_cmds",
@@ -86,7 +94,7 @@ class PipelineSpec:
         ):
             if getattr(self, attr) is None:
                 object.__setattr__(self, attr, [])
-        for attr in ("tests_env", "deploy_env", "benchmark_env", "auth_env"):
+        for attr in ("tests_env", "deploy_env", "rollout_env", "benchmark_env", "auth_env"):
             if getattr(self, attr) is None:
                 object.__setattr__(self, attr, {})
 
@@ -145,6 +153,7 @@ def load_pipeline_spec(path: Path) -> PipelineSpec:
 
     tests = _as_mapping(data.get("tests"), "tests")
     deploy = _as_mapping(data.get("deploy"), "deploy")
+    rollout = _as_mapping(data.get("rollout"), "rollout")
     bench = _as_mapping(data.get("benchmark"), "benchmark")
     artifacts = _as_mapping(data.get("artifacts"), "artifacts")
     tooling = _as_mapping(data.get("tooling"), "tooling")
@@ -210,6 +219,11 @@ def load_pipeline_spec(path: Path) -> PipelineSpec:
             str(kubectl_dump.get("label_selector")).strip() if kubectl_dump.get("label_selector") else None
         ),
         kubectl_dump_include_logs=bool(kubectl_dump.get("include_logs") or False),
+        rollout_run_cmds=_as_cmds(rollout, cmd_key="run_cmd", cmds_key="run_cmds"),
+        rollout_timeout_seconds=(int(rollout.get("timeout_seconds")) if rollout.get("timeout_seconds") else None),
+        rollout_retries=int(rollout.get("retries") or 0),
+        rollout_env=_as_env(rollout.get("env"), "rollout"),
+        rollout_workdir=(str(rollout.get("workdir")).strip() if rollout.get("workdir") else None),
         benchmark_run_cmds=_as_cmds(bench, cmd_key="run_cmd", cmds_key="run_cmds"),
         benchmark_timeout_seconds=(int(bench.get("timeout_seconds")) if bench.get("timeout_seconds") else None),
         benchmark_retries=int(bench.get("retries") or 0),

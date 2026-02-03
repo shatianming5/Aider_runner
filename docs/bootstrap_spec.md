@@ -1,0 +1,31 @@
+# `.aider_fsm/bootstrap.yml` specification (v1)
+
+`bootstrap.yml` defines **repo-owned environment setup** steps to run before verification.
+It is intended to make “one-command contract runs” reproducible (e.g. create a venv, install deps, warm up caches).
+
+Notes:
+
+- The runner records bootstrap artifacts under `.aider_fsm/artifacts/<run_id>/...`.
+- Commands are subject to the same security policy as pipeline/actions commands.
+- In `--unattended strict` mode, likely-interactive commands are blocked.
+
+## Top-level
+
+- `version`: must be `1`
+- `cmds`: list of shell commands (optional; empty is allowed for env-only bootstrap)
+  - Alias: `steps`
+- `env`: mapping of env vars applied to bootstrap/pipeline/actions (optional)
+  - Supports minimal expansion: `${VAR}` and `$VAR` are replaced from the current environment.
+  - Use `$$` for a literal `$`.
+- `workdir`: working directory (must be within repo; default: repo root)
+- `timeout_seconds`: per-command timeout (optional)
+- `retries`: retries per command (optional; default: 0)
+
+## Artifacts
+
+Bootstrap writes:
+
+- `bootstrap.yml`: snapshot of the spec used
+- `bootstrap_env.json`: applied env mapping (sensitive keys are redacted)
+- `bootstrap_summary.json`: ok/failed_index/total_results
+- `bootstrap_cmdXX_tryYY_*`: stdout/stderr/result per command attempt

@@ -1,6 +1,6 @@
 # Security model
 
-The runner executes pipeline and actions commands under a conservative policy.
+The runner executes pipeline, bootstrap, and actions commands under a conservative policy.
 
 ## Hard deny (always blocked)
 

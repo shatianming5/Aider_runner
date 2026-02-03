@@ -83,6 +83,31 @@ def test_tool_policy_execute_step_denies_plan_and_pipeline(tmp_path: Path):
     assert ok and reason is None
 
 
+def test_tool_policy_scaffold_contract_allows_only_pipeline_and_aider_fsm(tmp_path: Path):
+    repo = tmp_path.resolve()
+    plan = repo / "PLAN.md"
+    pipeline = repo / "pipeline.yml"
+
+    policy = ToolPolicy(
+        repo=repo,
+        plan_path=plan,
+        pipeline_path=pipeline,
+        purpose="scaffold_contract",
+        bash_mode="restricted",
+        unattended="strict",
+    )
+
+    ok, reason = policy.allow_file_write(pipeline)
+    assert ok and reason is None
+
+    ok, reason = policy.allow_file_write(repo / ".aider_fsm" / "bootstrap.yml")
+    assert ok and reason is None
+
+    ok, reason = policy.allow_file_write(repo / "src" / "app.py")
+    assert not ok
+    assert reason == "scaffold_contract_allows_only_pipeline_yml_and_aider_fsm"
+
+
 def test_tool_policy_restricted_bash_blocks_shell_metacharacters(tmp_path: Path):
     repo = tmp_path.resolve()
     policy = ToolPolicy(

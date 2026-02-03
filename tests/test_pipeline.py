@@ -42,6 +42,12 @@ def test_load_pipeline_spec_ok(tmp_path: Path):
                 "    namespace: default",
                 "    label_selector: app=myapp",
                 "    include_logs: true",
+                "rollout:",
+                "  run_cmds: [echo rollout]",
+                "  timeout_seconds: 200",
+                "  retries: 1",
+                "  env: {ROLLOUT_MODE: quick}",
+                "  workdir: .",
                 "benchmark:",
                 "  run_cmds: [echo bench]",
                 "  timeout_seconds: 300",
@@ -73,6 +79,11 @@ def test_load_pipeline_spec_ok(tmp_path: Path):
     assert spec.deploy_teardown_policy == "on_failure"
     assert spec.kubectl_dump_enabled is True
     assert spec.kubectl_dump_label_selector == "app=myapp"
+    assert spec.rollout_run_cmds == ["echo rollout"]
+    assert spec.rollout_timeout_seconds == 200
+    assert spec.rollout_retries == 1
+    assert spec.rollout_env["ROLLOUT_MODE"] == "quick"
+    assert spec.rollout_workdir == "."
     assert spec.benchmark_metrics_path == "metrics.json"
     assert spec.benchmark_required_keys == ["score"]
     assert spec.artifacts_out_dir == ".aider_fsm/artifacts"
@@ -138,3 +149,19 @@ def test_run_pipeline_verification_safe_mode_blocks_sudo(tmp_path: Path):
     assert verify.tests is not None
     assert verify.tests.results
     assert verify.tests.results[-1].rc == 126
+
+
+def test_run_pipeline_verification_rollout_runs(tmp_path: Path):
+    pipeline = PipelineSpec(
+        rollout_run_cmds=[_py_cmd(0)],
+        benchmark_run_cmds=[_py_cmd(0)],
+    )
+    verify = run_pipeline_verification(
+        tmp_path,
+        pipeline=pipeline,
+        tests_cmds=[_py_cmd(0)],
+        artifacts_dir=tmp_path / "artifacts",
+    )
+    assert verify.ok is True
+    assert verify.rollout is not None
+    assert verify.rollout.ok is True

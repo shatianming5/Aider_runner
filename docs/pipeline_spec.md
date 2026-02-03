@@ -6,10 +6,11 @@
 2. `tests`
 3. `deploy.setup` (optional)
 4. `deploy.health` (optional)
-5. `benchmark` (optional)
-6. `benchmark.metrics` validation (optional)
+5. `rollout` (optional)
+6. `benchmark` (optional)
+7. `benchmark.metrics` validation (optional)
 
-See `examples/pipeline.example.yml` and `examples/pipeline.rd_agent_rl_benchmark.yml`.
+See `examples/pipeline.example.yml` and `examples/pipeline.benchmark_skeleton.yml`.
 
 ## Top-level
 
@@ -18,6 +19,7 @@ See `examples/pipeline.example.yml` and `examples/pipeline.rd_agent_rl_benchmark
 - `tests`: test commands (required unless you pass `--test-cmd`)
 - `auth`: optional login steps
 - `deploy`: optional deploy steps
+- `rollout`: optional RL/post-training rollout steps
 - `benchmark`: optional benchmark steps + metrics validation
 - `artifacts`: output directory for run artifacts
 
@@ -49,6 +51,11 @@ See `examples/pipeline.example.yml` and `examples/pipeline.rd_agent_rl_benchmark
 - `timeout_seconds`, `retries`, `env`, `workdir`
 - `kubectl_dump`: optional debugging dump after verification
 
+## `rollout` (optional)
+
+- `run_cmds`
+- `timeout_seconds`, `retries`, `env`, `workdir`
+
 ## `benchmark` (optional)
 
 - `run_cmds`
@@ -56,8 +63,18 @@ See `examples/pipeline.example.yml` and `examples/pipeline.rd_agent_rl_benchmark
 - `required_keys`: list of keys that must exist in the metrics JSON
 - `timeout_seconds`, `retries`, `env`, `workdir`
 
+See `docs/metrics_schema.md` for a recommended stable schema across evaluation/rollout/training.
+
 ## Tooling bootstrap
 
 This runner intentionally does **not** embed platform-specific tool installation or cluster creation.
 If you need environment bootstrap steps, use `.aider_fsm/actions.yml` (see `examples/actions.example.yml`).
+For repo-owned, always-on environment setup, use `.aider_fsm/bootstrap.yml` (see `docs/bootstrap_spec.md`).
 
+## Runner-provided environment variables
+
+For every executed stage command, the runner sets:
+
+- `AIDER_FSM_STAGE`: stage name (e.g. `tests`, `deploy_setup`, `rollout`, `benchmark`)
+- `AIDER_FSM_ARTIFACTS_DIR`: stage artifacts directory (absolute path)
+- `AIDER_FSM_REPO_ROOT`: repo root directory (absolute path)

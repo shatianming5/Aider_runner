@@ -112,6 +112,10 @@ def _run_stage(
     artifacts_dir: Path,
 ) -> StageResult:
     stage = stage.strip() or "stage"
+    env2 = dict(env)
+    env2["AIDER_FSM_STAGE"] = stage
+    env2["AIDER_FSM_ARTIFACTS_DIR"] = str(artifacts_dir.resolve())
+    env2["AIDER_FSM_REPO_ROOT"] = str(repo.resolve())
     results: list[CmdResult] = []
     started = time.monotonic()
 
@@ -164,7 +168,7 @@ def _run_stage(
                     cmd,
                     workdir,
                     timeout_seconds=eff_timeout,
-                    env=env,
+                    env=env2,
                     interactive=bool(interactive and unattended == "guided"),
                 )
 
@@ -207,6 +211,7 @@ def run_pipeline_verification(
     tests_res: StageResult | None = None
     deploy_setup_res: StageResult | None = None
     deploy_health_res: StageResult | None = None
+    rollout_res: StageResult | None = None
     bench_res: StageResult | None = None
     metrics_path: str | None = None
     metrics: dict[str, Any] | None = None
@@ -387,6 +392,48 @@ def run_pipeline_verification(
                     metrics_errors=metrics_errors,
                 )
 
+        if pipeline and pipeline.rollout_run_cmds:
+            rollout_env = safe_env(env_base, pipeline.rollout_env, unattended=unattended)
+            rollout_workdir, rollout_wd_err = _workdir_or_fail("rollout", pipeline.rollout_workdir)
+            if rollout_wd_err is not None:
+                failed_stage = "rollout"
+                return VerificationResult(
+                    ok=False,
+                    failed_stage=failed_stage,
+                    auth=auth_res,
+                    tests=tests_res,
+                    deploy_setup=deploy_setup_res,
+                    deploy_health=deploy_health_res,
+                    rollout=rollout_wd_err,
+                    metrics_errors=metrics_errors,
+                )
+            rollout_timeout = pipeline.rollout_timeout_seconds
+            rollout_res = _run_stage(
+                repo,
+                stage="rollout",
+                cmds=pipeline.rollout_run_cmds,
+                workdir=rollout_workdir,
+                env=rollout_env,
+                timeout_seconds=rollout_timeout,
+                retries=pipeline.rollout_retries,
+                interactive=False,
+                unattended=unattended,
+                pipeline=pipeline,
+                artifacts_dir=artifacts_dir,
+            )
+            if not rollout_res.ok:
+                failed_stage = "rollout"
+                return VerificationResult(
+                    ok=False,
+                    failed_stage=failed_stage,
+                    auth=auth_res,
+                    tests=tests_res,
+                    deploy_setup=deploy_setup_res,
+                    deploy_health=deploy_health_res,
+                    rollout=rollout_res,
+                    metrics_errors=metrics_errors,
+                )
+
         if pipeline and pipeline.benchmark_run_cmds:
             bench_env = safe_env(env_base, pipeline.benchmark_env, unattended=unattended)
             bench_workdir, bench_wd_err = _workdir_or_fail("benchmark", pipeline.benchmark_workdir)
@@ -399,6 +446,7 @@ def run_pipeline_verification(
                     tests=tests_res,
                     deploy_setup=deploy_setup_res,
                     deploy_health=deploy_health_res,
+                    rollout=rollout_res,
                     benchmark=bench_wd_err,
                     metrics_errors=metrics_errors,
                 )
@@ -425,6 +473,7 @@ def run_pipeline_verification(
                     tests=tests_res,
                     deploy_setup=deploy_setup_res,
                     deploy_health=deploy_health_res,
+                    rollout=rollout_res,
                     benchmark=bench_res,
                     metrics_errors=metrics_errors,
                 )
@@ -444,6 +493,7 @@ def run_pipeline_verification(
                         tests=tests_res,
                         deploy_setup=deploy_setup_res,
                         deploy_health=deploy_health_res,
+                        rollout=rollout_res,
                         benchmark=bench_res,
                         metrics_path=metrics_path,
                         metrics_errors=metrics_errors,
@@ -463,6 +513,7 @@ def run_pipeline_verification(
                         tests=tests_res,
                         deploy_setup=deploy_setup_res,
                         deploy_health=deploy_health_res,
+                        rollout=rollout_res,
                         benchmark=bench_res,
                         metrics_path=metrics_path,
                         metrics=metrics,
@@ -480,6 +531,7 @@ def run_pipeline_verification(
                         tests=tests_res,
                         deploy_setup=deploy_setup_res,
                         deploy_health=deploy_health_res,
+                        rollout=rollout_res,
                         benchmark=bench_res,
                         metrics_path=metrics_path,
                         metrics=metrics,
@@ -494,6 +546,7 @@ def run_pipeline_verification(
             tests=tests_res,
             deploy_setup=deploy_setup_res,
             deploy_health=deploy_health_res,
+            rollout=rollout_res,
             benchmark=bench_res,
             metrics_path=metrics_path,
             metrics=metrics,
@@ -542,4 +595,3 @@ def fmt_stage_tail(prefix: str, stage: StageResult | None) -> str:
         f"[{prefix}_STDOUT_TAIL]\n{tail(res.stdout, STDIO_TAIL_CHARS)}\n\n"
         f"[{prefix}_STDERR_TAIL]\n{tail(res.stderr, STDIO_TAIL_CHARS)}\n\n"
     )
-

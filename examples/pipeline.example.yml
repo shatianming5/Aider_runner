@@ -44,6 +44,14 @@ deploy:
     # label_selector: app=myapp
     include_logs: false
 
+rollout:
+  # Optional RL/post-training rollout stage.
+  # run_cmds: [python -m myproj.rollout --out .aider_fsm/rollout.json]
+  # timeout_seconds: 1800
+  # retries: 0
+  # env: {ROLLOUT_MODE: quick}
+  # workdir: .
+
 benchmark:
   # run_cmds: [python benchmark/run.py --out metrics.json]
   # timeout_seconds: 1800

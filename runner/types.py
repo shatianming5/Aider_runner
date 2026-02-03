@@ -24,12 +24,13 @@ class StageResult:
 class VerificationResult:
     ok: bool
     failed_stage: str | None
+    bootstrap: StageResult | None = None
     auth: StageResult | None = None
     tests: StageResult | None = None
     deploy_setup: StageResult | None = None
     deploy_health: StageResult | None = None
+    rollout: StageResult | None = None
     benchmark: StageResult | None = None
     metrics_path: str | None = None
     metrics: dict[str, Any] | None = None
     metrics_errors: list[str] | None = None
-

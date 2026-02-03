@@ -13,8 +13,8 @@ actions:
     path: .env
     content: |
       # Example environment for benchmark runs
-      RD_AGENT_MODE=benchmark
-      RD_AGENT_LOG_LEVEL=info
+      APP_MODE=benchmark
+      LOG_LEVEL=info
 
   - id: install-deps
     kind: run_cmd
@@ -31,4 +31,3 @@ actions:
     retries: 0
     risk_level: low
     rationale: fail fast before deploy/benchmark
-

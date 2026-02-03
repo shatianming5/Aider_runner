@@ -60,6 +60,9 @@ def run_pending_actions(
 
     env_base = dict(os.environ)
     env = safe_env(env_base, {}, unattended=unattended)
+    env["AIDER_FSM_STAGE"] = "actions"
+    env["AIDER_FSM_ARTIFACTS_DIR"] = str(artifacts_dir.resolve())
+    env["AIDER_FSM_REPO_ROOT"] = str(repo.resolve())
     workdir = repo
 
     results: list[CmdResult] = []
@@ -157,7 +160,9 @@ def run_pending_actions(
             )
 
         for attempt in range(1, retries + 2):
-            res = run_cmd_capture(cmd, workdir, timeout_seconds=eff_timeout, env=env, interactive=False)
+            env2 = dict(env)
+            env2["AIDER_FSM_ACTION_ID"] = action_id
+            res = run_cmd_capture(cmd, workdir, timeout_seconds=eff_timeout, env=env2, interactive=False)
             results.append(res)
             write_cmd_artifacts(
                 artifacts_dir,
@@ -183,4 +188,3 @@ def run_pending_actions(
         write_text(artifacts_dir / "actions_warning.txt", f"failed to delete actions file: {actions_path}\n")
 
     return StageResult(ok=ok, results=results, failed_index=failed_index)
-

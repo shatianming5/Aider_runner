@@ -240,6 +240,14 @@ class ToolPolicy:
             return False, "path_outside_repo"
 
         p = str(self.purpose or "").strip().lower()
+        if p == "scaffold_contract":
+            pipeline = (self.repo / "pipeline.yml").resolve()
+            aider = (self.repo / ".aider_fsm").resolve()
+            if path == pipeline:
+                return True, None
+            if _within_root(aider, path):
+                return True, None
+            return False, "scaffold_contract_allows_only_pipeline_yml_and_aider_fsm"
         if p.startswith("plan_update") or p in ("mark_done", "block_step"):
             if path == self.plan_path:
                 return True, None

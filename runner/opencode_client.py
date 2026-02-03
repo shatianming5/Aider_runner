@@ -43,6 +43,15 @@ def _split_model(model: str) -> tuple[str, str]:
     return "openai", s
 
 
+def select_bash_mode(*, purpose: str, default_bash_mode: str, scaffold_bash_mode: str) -> str:
+    p = str(purpose or "").strip().lower()
+    default = str(default_bash_mode or "restricted").strip().lower() or "restricted"
+    scaffold = str(scaffold_bash_mode or default).strip().lower() or default
+    if p == "scaffold_contract":
+        return scaffold
+    return default
+
+
 def _extract_assistant_text(message: Any) -> str:
     if not isinstance(message, dict):
         return str(message)
@@ -106,6 +115,7 @@ class OpenCodeClient(AgentClient):
         base_url: str | None,
         timeout_seconds: int,
         bash_mode: str,
+        scaffold_bash_mode: str = "full",
         unattended: str,
         server_log_path: Path | None = None,
         username: str | None = None,
@@ -119,6 +129,9 @@ class OpenCodeClient(AgentClient):
         self._bash_mode = (bash_mode or "restricted").strip().lower()
         if self._bash_mode not in ("restricted", "full"):
             raise ValueError("invalid_bash_mode")
+        self._scaffold_bash_mode = (scaffold_bash_mode or "full").strip().lower()
+        if self._scaffold_bash_mode not in ("restricted", "full"):
+            raise ValueError("invalid_scaffold_bash_mode")
         self._unattended = str(unattended or "strict").strip().lower() or "strict"
 
         provider_id, model_id = _split_model(model)
@@ -169,7 +182,11 @@ class OpenCodeClient(AgentClient):
             plan_path=(self._repo / self._plan_rel).resolve(),
             pipeline_path=((self._repo / self._pipeline_rel).resolve() if self._pipeline_rel else None),
             purpose=purpose,
-            bash_mode=self._bash_mode,
+            bash_mode=select_bash_mode(
+                purpose=purpose,
+                default_bash_mode=self._bash_mode,
+                scaffold_bash_mode=self._scaffold_bash_mode,
+            ),
             unattended=self._unattended,
         )
 

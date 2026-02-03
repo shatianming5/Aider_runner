@@ -1,17 +1,17 @@
 # OpenCode-FSM Runner
 
 A small, auditable **closed-loop executor** driven by an OpenCode agent (via the OpenCode server API).
-It is designed to integrate with agent projects (e.g. **RD-agent**) for automation such as **post-training RL benchmark deployment + evaluation**.
+It is designed to integrate with agent projects for automation such as **benchmark deployment + evaluation** with hard guardrails.
 
 Cycle:
 
 1) snapshot repo + `PLAN.md`  
 2) update plan (model may ONLY edit `PLAN.md`)  
 3) execute exactly one `Next` step (model may NOT edit `PLAN.md` or `pipeline.yml`)  
-4) verify via `pipeline.yml` (tests → deploy → benchmark → metrics)  
+4) verify via `pipeline.yml` (tests → deploy → rollout → benchmark → metrics)  
 5) pass → mark Done; fail → fix or re-plan; optionally request `.aider_fsm/actions.yml`  
 
-中文：这是一个“计划-执行-验收”的闭环 runner，重点是可审计、可复现、可安全执行（适合作为 RD-agent 的 benchmark/deploy 验收框架）。
+中文：这是一个“计划-执行-验收”的闭环 runner，重点是可审计、可复现、可安全执行（适合作为 benchmark/deploy 验收框架）。
 
 ## Install
 
@@ -74,6 +74,17 @@ python3 -m runner --repo https://github.com/evalplus/evalplus --goal "运行 eva
 
 Use `--clone-dir` to choose a different clone location. The runner will also load `.env` by default (disable with `--env-file ''`).
 
+If the remote repo includes a root `pipeline.yml`, the runner will auto-load it. To require a pipeline (recommended for “contract runs”),
+use `--require-pipeline`.
+
+If a remote repo does **not** include `pipeline.yml`, the runner will auto-scaffold a minimal contract via OpenCode
+(`pipeline.yml` + `.aider_fsm/`) so `--repo <url>` can run end-to-end. Disable with `--scaffold-contract off`.
+
+Control OpenCode bash permissions during scaffolding via `--scaffold-opencode-bash` (default: `full`).
+
+If `git clone` is blocked (common in restricted networks), GitHub HTTPS/SSH URLs will fall back to downloading a GitHub archive ZIP
+(`main` then `master`) and extracting it locally.
+
 ### Deploy + benchmark (pipeline.yml)
 
 Add a `pipeline.yml` to the target repo to include deploy/benchmark/metrics in the verification loop:
@@ -87,11 +98,17 @@ Notes:
 - `pipeline.yml` is a **human-owned contract**. The runner will revert any model edits to it.
 - Artifacts are written under `.aider_fsm/artifacts/<run_id>/` (override via `--artifacts-dir`).
 - If you need interactive auth, set `pipeline.auth.interactive: true` and run with `--unattended guided`.
+- `rollout` is an optional stage for post-training RL rollouts/trajectories (see `docs/pipeline_spec.md`).
 
 Examples:
 
 - `examples/pipeline.example.yml`
-- `examples/pipeline.rd_agent_rl_benchmark.yml`
+- `examples/pipeline.benchmark_skeleton.yml`
+
+### Repo-owned environment bootstrap (bootstrap.yml)
+
+If your target repo needs a reproducible environment setup (e.g. venv + deps), add `.aider_fsm/bootstrap.yml`
+(see `docs/bootstrap_spec.md` and `examples/bootstrap.example.yml`). The runner executes it before verification.
 
 ### Environment/tooling bootstrap (actions.yml)
 
@@ -104,8 +121,10 @@ See `examples/actions.example.yml`.
 
 - `docs/overview.md`
 - `docs/pipeline_spec.md`
+- `docs/bootstrap_spec.md`
+- `docs/metrics_schema.md`
 - `docs/security_model.md`
-- `docs/integration_rd_agent.md`
+- `docs/integration.md`
 
 ## Tests
 

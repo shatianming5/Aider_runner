@@ -16,6 +16,8 @@ def plan_template(goal: str, test_cmd: str, *, pipeline: PipelineSpec | None = N
     if pipeline:
         if pipeline.deploy_setup_cmds or pipeline.deploy_health_cmds:
             acceptance.append("- [ ] Deploy succeeds (see pipeline.yml)")
+        if getattr(pipeline, "rollout_run_cmds", None):
+            acceptance.append("- [ ] Rollout succeeds (see pipeline.yml)")
         if pipeline.benchmark_run_cmds:
             acceptance.append("- [ ] Benchmark succeeds (see pipeline.yml)")
         if pipeline.benchmark_metrics_path or pipeline.benchmark_required_keys:
@@ -140,4 +142,3 @@ def parse_plan(plan_text: str) -> dict[str, Any]:
         "backlog_open_count": backlog_open,
         "errors": errors,
     }
-

@@ -79,6 +79,33 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--test-cmd", default=None, help='acceptance command (default: pipeline/tests or "pytest -q")')
     parser.add_argument("--pipeline", default="", help="pipeline YAML path relative to repo (optional)")
     parser.add_argument(
+        "--require-pipeline",
+        action="store_true",
+        help="fail if no pipeline is provided/found (recommended for one-command contract runs)",
+    )
+    parser.add_argument(
+        "--scaffold-contract",
+        choices=("off", "opencode"),
+        default="off",
+        help=(
+            "when pipeline.yml is missing: generate a contract scaffold. "
+            "`opencode` uses the agent to generate the contract. "
+            "Default: off."
+        ),
+    )
+    parser.add_argument(
+        "--scaffold-require-metrics",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="require `.aider_fsm/metrics.json` with required keys (default: true)",
+    )
+    parser.add_argument(
+        "--scaffold-opencode-bash",
+        choices=("restricted", "full"),
+        default="full",
+        help="OpenCode bash permission mode during `--scaffold-contract opencode` (default: full)",
+    )
+    parser.add_argument(
         "--env-file",
         default=".env",
         help="dotenv file to load before running (default: .env; set to empty to disable)",
@@ -194,13 +221,44 @@ def main(argv: list[str] | None = None) -> int:
     pipeline_abs = None
     pipeline_rel = None
     pipeline = None
-    if str(args.pipeline or "").strip():
-        pipeline_abs = resolve_config_path(repo, str(args.pipeline).strip())
+    pipeline_arg = str(args.pipeline or "").strip()
+    if pipeline_arg:
+        pipeline_abs = resolve_config_path(repo, pipeline_arg)
         pipeline = load_pipeline_spec(pipeline_abs)
         pipeline_rel = relpath_or_none(pipeline_abs, repo)
+    else:
+        # Contract mode convenience: repos can self-describe via a root `pipeline.yml`.
+        default_pipeline = (repo / "pipeline.yml").resolve()
+        if default_pipeline.exists():
+            pipeline_abs = default_pipeline
+            pipeline = load_pipeline_spec(pipeline_abs)
+            pipeline_rel = relpath_or_none(pipeline_abs, repo)
+    scaffold_contract = str(args.scaffold_contract or "off").strip().lower() or "off"
+    if scaffold_contract not in ("off", "opencode"):
+        scaffold_contract = "off"
+
+    # Convenience: for remote repos without a contract, default to OpenCode scaffolding so
+    # `--repo <url>` can run end-to-end without requiring repo-side YAML upfront.
+    if scaffold_contract == "off" and prepared.cloned_from and pipeline_abs is None:
+        scaffold_contract = "opencode"
+        print(
+            "INFO: pipeline.yml not found in remote repo; auto-scaffolding a minimal contract (opencode). "
+            "Disable with --scaffold-contract off.",
+            file=sys.stderr,
+        )
+
+    if args.require_pipeline and pipeline_abs is None and scaffold_contract == "off":
+        print(
+            "ERROR: pipeline.yml not found and --pipeline not provided. "
+            "For one-command contract runs, add a pipeline.yml at the repo root (version: 1).",
+            file=sys.stderr,
+        )
+        return 2
+
+    tests_from_user = bool(args.test_cmd and str(args.test_cmd).strip())
 
     tests_cmds: list[str]
-    if args.test_cmd and str(args.test_cmd).strip():
+    if tests_from_user:
         tests_cmds = [str(args.test_cmd).strip()]
     elif pipeline and pipeline.tests_cmds:
         tests_cmds = list(pipeline.tests_cmds)
@@ -241,6 +299,10 @@ def main(argv: list[str] | None = None) -> int:
         pipeline=pipeline,
         tests_cmds=tests_cmds,
         effective_test_cmd=effective_test_cmd,
+        tests_from_user=tests_from_user,
+        require_pipeline=bool(args.require_pipeline),
+        scaffold_contract=scaffold_contract,
+        scaffold_require_metrics=bool(args.scaffold_require_metrics),
         artifacts_base=artifacts_base,
         seed_files=seed_files,
         max_iters=int(args.max_iters),
@@ -250,6 +312,7 @@ def main(argv: list[str] | None = None) -> int:
         opencode_url=str(args.opencode_url or ""),
         opencode_timeout_seconds=int(args.opencode_timeout or 300),
         opencode_bash=str(args.opencode_bash or "restricted"),
+        scaffold_opencode_bash=str(args.scaffold_opencode_bash or "full"),
     )
     return run(cfg)
 

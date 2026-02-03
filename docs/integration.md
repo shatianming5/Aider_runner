@@ -1,0 +1,38 @@
+# Integrating a target repo (deploy + rollout + benchmark)
+
+The runner is intentionally **generic**. Integration is done through:
+
+1. a `pipeline.yml` verification contract
+2. a metrics JSON file produced by your benchmark
+3. (optional) a `.aider_fsm/bootstrap.yml` for repo-owned environment setup
+
+## Recommended starting point
+
+- Copy `examples/pipeline.benchmark_skeleton.yml` into your target repo root as `pipeline.yml`
+- Fill in:
+  - `deploy.setup_cmds` / `deploy.health_cmds` (if you deploy anything)
+  - `rollout.run_cmds` (optional) to generate rollouts/trajectories
+  - `benchmark.run_cmds` to run the benchmark and write `benchmark.metrics_path`
+  - `benchmark.required_keys` for your evaluation KPIs
+
+## Environment bootstrap (recommended)
+
+If your repo needs a reproducible environment, add `.aider_fsm/bootstrap.yml` (see `docs/bootstrap_spec.md` and
+`examples/bootstrap.example.yml`). A common pattern is to create a venv under `.aider_fsm/venv` and prepend it to `PATH`.
+
+## Metrics JSON contract
+
+The runner expects a JSON **object** at `benchmark.metrics_path`.
+It validates that all `benchmark.required_keys` are present.
+
+Keep the metrics small and stable; write full raw logs into artifacts.
+
+## Running
+
+From the target repo root:
+
+```bash
+python3 /path/to/OpenCode-FSM-Runner/fsm_runner.py --repo . --pipeline pipeline.yml --goal "Run benchmark" --model openai/gpt-4o-mini
+```
+
+Artifacts are written under `.aider_fsm/artifacts/<run_id>/`.

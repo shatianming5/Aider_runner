@@ -1,0 +1,15 @@
+version: 1
+
+# Example bootstrap:
+# - create a venv under .aider_fsm/venv
+# - install python deps
+# - expose venv on PATH for subsequent pipeline/actions commands
+
+env:
+  VENV_DIR: ${AIDER_FSM_REPO_ROOT}/.aider_fsm/venv
+  PATH: ${AIDER_FSM_REPO_ROOT}/.aider_fsm/venv/bin:${PATH}
+
+cmds:
+  - python3 -m venv .aider_fsm/venv
+  - .aider_fsm/venv/bin/python -m pip install -r requirements.txt
+  - .aider_fsm/venv/bin/python -c "import sys; print('bootstrap ok', sys.version)"

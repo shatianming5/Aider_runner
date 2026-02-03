@@ -3,26 +3,30 @@ from __future__ import annotations
 import os
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
 from .actions import run_pending_actions
 from .agent_client import AgentClient, AgentResult
+from .bootstrap import run_bootstrap
 from .opencode_client import OpenCodeClient
-from .pipeline_spec import PipelineSpec
+from .pipeline_spec import PipelineSpec, load_pipeline_spec
 from .pipeline_verify import fmt_stage_tail, run_pipeline_verification, stage_rc
 from .plan_format import ensure_plan_file, parse_plan
+from .paths import relpath_or_none
 from .prompts import (
     make_block_step_prompt,
     make_execute_prompt,
     make_fix_or_replan_prompt,
     make_mark_done_prompt,
     make_plan_update_prompt,
+    make_scaffold_contract_prompt,
 )
 from .snapshot import build_snapshot, get_git_changed_files, git_checkout, non_plan_changes
 from .state import append_jsonl, default_state, ensure_dirs, now_iso, load_state, save_state
 from .subprocess_utils import read_text_if_exists, run_cmd, tail, write_json, write_text
+from .types import VerificationResult
 
 
 @dataclass(frozen=True)
@@ -45,6 +49,11 @@ class RunnerConfig:
     opencode_url: str
     opencode_timeout_seconds: int
     opencode_bash: str
+    scaffold_opencode_bash: str = "full"
+    tests_from_user: bool = False
+    require_pipeline: bool = False
+    scaffold_contract: str = "off"  # off|opencode
+    scaffold_require_metrics: bool = True
 
 
 def _load_seed_block(seed_files: list[str]) -> str:
@@ -119,7 +128,6 @@ def _agent_run(
 def run(config: RunnerConfig, *, agent: AgentClient | None = None) -> int:
     repo = config.repo
     plan_abs = (repo / config.plan_rel).resolve()
-    pipeline_abs = config.pipeline_abs
 
     state_dir, logs_dir, state_path = ensure_dirs(repo)
     run_id = time.strftime("%Y%m%d_%H%M%S", time.localtime())
@@ -128,44 +136,289 @@ def run(config: RunnerConfig, *, agent: AgentClient | None = None) -> int:
     artifacts_run_dir = config.artifacts_base / run_id
     artifacts_run_dir.mkdir(parents=True, exist_ok=True)
     write_json(artifacts_run_dir / "versions.json", _probe_versions(repo))
+    os.environ["AIDER_FSM_REPO_ROOT"] = str(repo.resolve())
+    os.environ["AIDER_FSM_RUN_ID"] = str(run_id)
+    os.environ["AIDER_FSM_ARTIFACTS_BASE"] = str(config.artifacts_base.resolve())
+    bootstrap_path = (repo / ".aider_fsm" / "bootstrap.yml").resolve()
+
+    # If the repo does not provide a pipeline contract, optionally scaffold a minimal one.
+    scaffold_mode = str(config.scaffold_contract or "off").strip().lower() or "off"
+    created_agent = False
+
+    def _ensure_agent(*, pipeline_rel_override: str | None = None) -> AgentClient:
+        nonlocal agent, created_agent, config
+        if agent is not None:
+            return agent
+
+        oc_username = None
+        oc_password = None
+        if str(config.opencode_url or "").strip():
+            oc_username = str(os.environ.get("OPENCODE_SERVER_USERNAME") or "opencode").strip() or "opencode"
+            oc_password = str(os.environ.get("OPENCODE_SERVER_PASSWORD") or "").strip()
+
+        agent = OpenCodeClient(
+            repo=repo,
+            plan_rel=config.plan_rel,
+            pipeline_rel=str(pipeline_rel_override).strip() if pipeline_rel_override else config.pipeline_rel,
+            model=config.model,
+            base_url=(str(config.opencode_url or "").strip() or None),
+            timeout_seconds=int(config.opencode_timeout_seconds or 300),
+            bash_mode=str(config.opencode_bash or "restricted"),
+            scaffold_bash_mode=str(config.scaffold_opencode_bash or "full"),
+            unattended=str(config.unattended or "strict"),
+            server_log_path=artifacts_run_dir / "opencode_server.log",
+            session_title=f"{repo.name}:{run_id}",
+            username=oc_username,
+            password=oc_password,
+        )
+        created_agent = True
+        return agent
+
+    need_scaffold = config.pipeline_abs is None and not (repo / "pipeline.yml").exists() and scaffold_mode == "opencode"
+
+    if need_scaffold and scaffold_mode == "opencode":
+        # Agent-first contract scaffolding: let OpenCode write `pipeline.yml` + `.aider_fsm/`.
+        scaffold_err = ""
+        try:
+            scaffold_agent = _ensure_agent(pipeline_rel_override="pipeline.yml")
+            res = _agent_run(
+                scaffold_agent,
+                make_scaffold_contract_prompt(
+                    repo,
+                    pipeline_rel="pipeline.yml",
+                    require_metrics=bool(config.scaffold_require_metrics),
+                ),
+                log_path=log_path,
+                iter_idx=0,
+                fsm_state="S0_SCAFFOLD",
+                event="scaffold_contract",
+            )
+            write_text(artifacts_run_dir / "scaffold_agent_result.txt", tail(res.assistant_text or "", 20000) + "\n")
+        except Exception as e:
+            scaffold_err = tail(str(e), 4000)
+            write_text(artifacts_run_dir / "scaffold_agent_error.txt", scaffold_err + "\n")
+            append_jsonl(
+                log_path,
+                {
+                    "ts": now_iso(),
+                    "iter_idx": 0,
+                    "fsm_state": "S0_SCAFFOLD",
+                    "event": "scaffold_contract_error",
+                    "error": tail(str(e), 2000),
+                },
+            )
+
+        # Validate pipeline parseability (and minimal contract requirements). If missing/invalid, fail fast.
+        pipeline_ok = False
+        pipeline_validation_reason = ""
+        pipeline_path = (repo / "pipeline.yml").resolve()
+        if pipeline_path.exists():
+            try:
+                parsed = load_pipeline_spec(pipeline_path)
+                missing_fields: list[str] = []
+                if parsed.security_max_cmd_seconds is None or int(parsed.security_max_cmd_seconds) <= 0:
+                    missing_fields.append("security.max_cmd_seconds")
+
+                if bool(config.scaffold_require_metrics):
+                    required_keys = ["score"]
+                    if not list(parsed.benchmark_run_cmds or []):
+                        missing_fields.append("benchmark.run_cmds")
+                    if not str(parsed.benchmark_metrics_path or "").strip():
+                        missing_fields.append("benchmark.metrics_path")
+                    if any(k not in set(parsed.benchmark_required_keys or []) for k in required_keys):
+                        missing_fields.append("benchmark.required_keys (missing: score)")
+
+                if missing_fields:
+                    pipeline_validation_reason = "missing_scaffold_requirements"
+                    write_text(
+                        artifacts_run_dir / "scaffold_agent_pipeline_validation_error.txt",
+                        "Pipeline is parseable but does not meet scaffold requirements:\n"
+                        + "\n".join([f"- {x}" for x in missing_fields])
+                        + "\n",
+                    )
+                    append_jsonl(
+                        log_path,
+                        {
+                            "ts": now_iso(),
+                            "iter_idx": 0,
+                            "fsm_state": "S0_SCAFFOLD",
+                            "event": "scaffold_agent_pipeline_validation_error",
+                            "pipeline_path": str(pipeline_path),
+                            "missing_fields": missing_fields,
+                        },
+                    )
+                else:
+                    pipeline_ok = True
+            except Exception as e:
+                write_text(
+                    artifacts_run_dir / "scaffold_agent_pipeline_parse_error.txt",
+                    tail(str(e), 4000) + "\n",
+                )
+                append_jsonl(
+                    log_path,
+                    {
+                        "ts": now_iso(),
+                        "iter_idx": 0,
+                        "fsm_state": "S0_SCAFFOLD",
+                        "event": "scaffold_agent_pipeline_parse_error",
+                        "pipeline_path": str(pipeline_path),
+                        "error": tail(str(e), 2000),
+                    },
+                )
+        if not pipeline_ok:
+            reason = "missing_pipeline_yml"
+            if pipeline_path.exists():
+                reason = "invalid_or_incomplete_pipeline_yml"
+            if pipeline_validation_reason:
+                reason = f"{reason}; {pipeline_validation_reason}"
+            if scaffold_err:
+                reason = f"{reason}; scaffold_contract_error"
+            if pipeline_path.exists():
+                write_text(artifacts_run_dir / "scaffold_agent_pipeline.yml", read_text_if_exists(pipeline_path))
+            write_text(
+                artifacts_run_dir / "scaffold_error.txt",
+                "scaffold_contract_failed: opencode did not produce a valid pipeline contract.\n"
+                f"reason: {reason}\n",
+            )
+            print(
+                "ERROR: `--scaffold-contract opencode` did not produce a valid pipeline.yml contract. "
+                "See artifacts for details (scaffold_agent_result.txt / scaffold_*_error.txt).",
+                file=sys.stderr,
+            )
+            if created_agent and agent is not None:
+                try:
+                    agent.close()
+                except Exception:
+                    pass
+            return 2
+
+    # Load pipeline after scaffolding (or when provided).
+    pipeline_abs = config.pipeline_abs
+    pipeline_rel = config.pipeline_rel
+    if pipeline_abs is None:
+        default_pipeline = (repo / "pipeline.yml").resolve()
+        if default_pipeline.exists():
+            pipeline_abs = default_pipeline
+            pipeline_rel = relpath_or_none(pipeline_abs, repo)
+
+    pipeline = config.pipeline
     if pipeline_abs and pipeline_abs.exists():
-        write_text(artifacts_run_dir / "pipeline.yml", read_text_if_exists(pipeline_abs))
+        try:
+            pipeline = load_pipeline_spec(pipeline_abs)
+        except Exception as e:
+            pipeline = None
+            write_text(artifacts_run_dir / "pipeline_parse_error.txt", tail(str(e), 4000) + "\n")
+            append_jsonl(
+                log_path,
+                {
+                    "ts": now_iso(),
+                    "iter_idx": 0,
+                    "fsm_state": "S0_SCAFFOLD",
+                    "event": "pipeline_parse_error",
+                    "pipeline_path": str(pipeline_abs),
+                    "error": tail(str(e), 2000),
+                },
+            )
+
+    tests_cmds = list(config.tests_cmds or [])
+    effective_test_cmd = config.effective_test_cmd
+    if not bool(config.tests_from_user) and pipeline and pipeline.tests_cmds:
+        tests_cmds = list(pipeline.tests_cmds)
+        effective_test_cmd = " && ".join(tests_cmds)
+
+    config = replace(
+        config,
+        pipeline_abs=pipeline_abs,
+        pipeline_rel=pipeline_rel,
+        pipeline=pipeline,
+        tests_cmds=tests_cmds,
+        effective_test_cmd=effective_test_cmd,
+    )
+
+    if config.require_pipeline and (config.pipeline_abs is None or config.pipeline is None):
+        print(
+            "ERROR: pipeline.yml not found or invalid. "
+            "Provide --pipeline or add a root pipeline.yml (version: 1), or use --scaffold-contract opencode.",
+            file=sys.stderr,
+        )
+        return 2
+
+    if config.pipeline_abs and config.pipeline_abs.exists():
+        write_text(artifacts_run_dir / "pipeline.yml", read_text_if_exists(config.pipeline_abs))
 
     if config.preflight_only:
-        preflight_dir = artifacts_run_dir / "preflight"
-        verify = run_pipeline_verification(
-            repo,
-            pipeline=config.pipeline,
-            tests_cmds=config.tests_cmds,
-            artifacts_dir=preflight_dir,
-            unattended=config.unattended,
-        )
-        write_json(
-            preflight_dir / "summary.json",
-            {
-                "ok": verify.ok,
-                "failed_stage": verify.failed_stage,
-                "auth_rc": stage_rc(verify.auth),
-                "test_rc": stage_rc(verify.tests),
-                "deploy_setup_rc": stage_rc(verify.deploy_setup),
-                "deploy_health_rc": stage_rc(verify.deploy_health),
-                "benchmark_rc": stage_rc(verify.benchmark),
-                "metrics_path": verify.metrics_path,
-                "metrics_errors": verify.metrics_errors or [],
-            },
-        )
-        append_jsonl(
-            log_path,
-            {
-                "ts": now_iso(),
-                "iter_idx": 0,
-                "fsm_state": "PREFLIGHT",
-                "event": "preflight_verify",
-                "ok": verify.ok,
-                "failed_stage": verify.failed_stage,
-            },
-        )
-        return 0 if verify.ok else 3
+        try:
+            preflight_dir = artifacts_run_dir / "preflight"
+            bootstrap_stage = None
+            if bootstrap_path.exists():
+                bootstrap_stage, applied_env = run_bootstrap(
+                    repo,
+                    bootstrap_path=bootstrap_path,
+                    pipeline=config.pipeline,
+                    unattended=config.unattended,
+                    artifacts_dir=preflight_dir,
+                )
+                for k, v in (applied_env or {}).items():
+                    os.environ[str(k)] = str(v)
+
+                if not bootstrap_stage.ok:
+                    verify = VerificationResult(
+                        ok=False,
+                        failed_stage="bootstrap",
+                        bootstrap=bootstrap_stage,
+                        metrics_errors=[],
+                    )
+                else:
+                    verify = run_pipeline_verification(
+                        repo,
+                        pipeline=config.pipeline,
+                        tests_cmds=config.tests_cmds,
+                        artifacts_dir=preflight_dir,
+                        unattended=config.unattended,
+                    )
+                    verify = replace(verify, bootstrap=bootstrap_stage)
+            else:
+                verify = run_pipeline_verification(
+                    repo,
+                    pipeline=config.pipeline,
+                    tests_cmds=config.tests_cmds,
+                    artifacts_dir=preflight_dir,
+                    unattended=config.unattended,
+                )
+            write_json(
+                preflight_dir / "summary.json",
+                {
+                    "ok": verify.ok,
+                    "failed_stage": verify.failed_stage,
+                    "bootstrap_rc": stage_rc(verify.bootstrap),
+                    "auth_rc": stage_rc(verify.auth),
+                    "test_rc": stage_rc(verify.tests),
+                    "deploy_setup_rc": stage_rc(verify.deploy_setup),
+                    "deploy_health_rc": stage_rc(verify.deploy_health),
+                    "rollout_rc": stage_rc(verify.rollout),
+                    "benchmark_rc": stage_rc(verify.benchmark),
+                    "metrics_path": verify.metrics_path,
+                    "metrics_errors": verify.metrics_errors or [],
+                },
+            )
+            append_jsonl(
+                log_path,
+                {
+                    "ts": now_iso(),
+                    "iter_idx": 0,
+                    "fsm_state": "PREFLIGHT",
+                    "event": "preflight_verify",
+                    "ok": verify.ok,
+                    "failed_stage": verify.failed_stage,
+                },
+            )
+            return 0 if verify.ok else 3
+        finally:
+            if created_agent and agent is not None:
+                try:
+                    agent.close()
+                except Exception:
+                    pass
 
     ensure_plan_file(plan_abs, config.goal, config.effective_test_cmd, pipeline=config.pipeline)
     os.chdir(repo)
@@ -181,30 +434,43 @@ def run(config: RunnerConfig, *, agent: AgentClient | None = None) -> int:
     state = load_state(state_path, defaults)
     save_state(state_path, state)
 
-    created_agent = False
-    if agent is None:
-        oc_username = None
-        oc_password = None
-        if str(config.opencode_url or "").strip():
-            oc_username = str(os.environ.get("OPENCODE_SERVER_USERNAME") or "opencode").strip() or "opencode"
-            oc_password = str(os.environ.get("OPENCODE_SERVER_PASSWORD") or "").strip()
+    bootstrap_ok = False
 
-        agent = OpenCodeClient(
-            repo=repo,
-            plan_rel=config.plan_rel,
-            pipeline_rel=config.pipeline_rel,
-            model=config.model,
-            base_url=(str(config.opencode_url or "").strip() or None),
-            timeout_seconds=int(config.opencode_timeout_seconds or 300),
-            bash_mode=str(config.opencode_bash or "restricted"),
-            unattended=str(config.unattended or "strict"),
-            server_log_path=artifacts_run_dir / "opencode_server.log",
-            session_title=f"{repo.name}:{run_id}",
-            username=oc_username,
-            password=oc_password,
+    def _verify_with_bootstrap(*, iter_artifacts_dir: Path) -> VerificationResult:
+        nonlocal bootstrap_ok
+        bootstrap_stage = None
+        if bootstrap_path.exists() and not bootstrap_ok:
+            bootstrap_stage, applied_env = run_bootstrap(
+                repo,
+                bootstrap_path=bootstrap_path,
+                pipeline=config.pipeline,
+                unattended=config.unattended,
+                artifacts_dir=iter_artifacts_dir,
+            )
+            for k, v in (applied_env or {}).items():
+                os.environ[str(k)] = str(v)
+            if bootstrap_stage.ok:
+                bootstrap_ok = True
+            else:
+                return VerificationResult(
+                    ok=False,
+                    failed_stage="bootstrap",
+                    bootstrap=bootstrap_stage,
+                    metrics_errors=[],
+                )
+
+        verify = run_pipeline_verification(
+            repo,
+            pipeline=config.pipeline,
+            tests_cmds=config.tests_cmds,
+            artifacts_dir=iter_artifacts_dir,
+            unattended=config.unattended,
         )
-        created_agent = True
+        if bootstrap_stage is not None:
+            verify = replace(verify, bootstrap=bootstrap_stage)
+        return verify
 
+    agent = _ensure_agent()
     try:
         for iter_idx in range(1, config.max_iters + 1):
             state["iter_idx"] = iter_idx
@@ -333,18 +599,15 @@ def run(config: RunnerConfig, *, agent: AgentClient | None = None) -> int:
                 state["fsm_state"] = "S4_VERIFY"
                 save_state(state_path, state)
                 iter_artifacts_dir = artifacts_run_dir / f"iter_{iter_idx:04d}"
-                verify = run_pipeline_verification(
-                    repo,
-                    pipeline=config.pipeline,
-                    tests_cmds=config.tests_cmds,
-                    artifacts_dir=iter_artifacts_dir,
-                    unattended=config.unattended,
-                )
+                verify = _verify_with_bootstrap(iter_artifacts_dir=iter_artifacts_dir)
                 state["last_test_rc"] = stage_rc(verify.tests)
                 state["last_deploy_setup_rc"] = stage_rc(verify.deploy_setup)
                 state["last_deploy_health_rc"] = stage_rc(verify.deploy_health)
+                state["last_rollout_rc"] = stage_rc(verify.rollout)
                 state["last_benchmark_rc"] = stage_rc(verify.benchmark)
                 state["last_metrics_ok"] = bool(verify.ok or verify.failed_stage != "metrics")
+                if verify.bootstrap is not None:
+                    state["last_bootstrap_rc"] = stage_rc(verify.bootstrap)
                 save_state(state_path, state)
                 append_jsonl(
                     log_path,
@@ -368,10 +631,12 @@ def run(config: RunnerConfig, *, agent: AgentClient | None = None) -> int:
                 failure_tail = (
                     f"FAILED_STAGE={verify.failed_stage}\n"
                     f"ARTIFACTS_DIR={iter_artifacts_dir}\n\n"
+                    + fmt_stage_tail("BOOTSTRAP", verify.bootstrap)
                     + fmt_stage_tail("AUTH", verify.auth)
                     + fmt_stage_tail("TESTS", verify.tests)
                     + fmt_stage_tail("DEPLOY_SETUP", verify.deploy_setup)
                     + fmt_stage_tail("DEPLOY_HEALTH", verify.deploy_health)
+                    + fmt_stage_tail("ROLLOUT", verify.rollout)
                     + fmt_stage_tail("BENCHMARK", verify.benchmark)
                     + (f"METRICS_ERRORS={verify.metrics_errors}\n" if (verify.metrics_errors or []) else "")
                 )
@@ -446,22 +711,18 @@ def run(config: RunnerConfig, *, agent: AgentClient | None = None) -> int:
             state["fsm_state"] = "S4_VERIFY"
             save_state(state_path, state)
             iter_artifacts_dir = artifacts_run_dir / f"iter_{iter_idx:04d}"
-            verify = run_pipeline_verification(
-                repo,
-                pipeline=config.pipeline,
-                tests_cmds=config.tests_cmds,
-                artifacts_dir=iter_artifacts_dir,
-                unattended=config.unattended,
-            )
+            verify = _verify_with_bootstrap(iter_artifacts_dir=iter_artifacts_dir)
             write_json(
                 iter_artifacts_dir / "summary.json",
                 {
                     "ok": verify.ok,
                     "failed_stage": verify.failed_stage,
+                    "bootstrap_rc": stage_rc(verify.bootstrap),
                     "auth_rc": stage_rc(verify.auth),
                     "test_rc": stage_rc(verify.tests),
                     "deploy_setup_rc": stage_rc(verify.deploy_setup),
                     "deploy_health_rc": stage_rc(verify.deploy_health),
+                    "rollout_rc": stage_rc(verify.rollout),
                     "benchmark_rc": stage_rc(verify.benchmark),
                     "metrics_path": verify.metrics_path,
                     "metrics_errors": verify.metrics_errors or [],
@@ -470,8 +731,11 @@ def run(config: RunnerConfig, *, agent: AgentClient | None = None) -> int:
             state["last_test_rc"] = stage_rc(verify.tests)
             state["last_deploy_setup_rc"] = stage_rc(verify.deploy_setup)
             state["last_deploy_health_rc"] = stage_rc(verify.deploy_health)
+            state["last_rollout_rc"] = stage_rc(verify.rollout)
             state["last_benchmark_rc"] = stage_rc(verify.benchmark)
             state["last_metrics_ok"] = bool(verify.ok or verify.failed_stage != "metrics")
+            if verify.bootstrap is not None:
+                state["last_bootstrap_rc"] = stage_rc(verify.bootstrap)
             save_state(state_path, state)
             append_jsonl(
                 log_path,

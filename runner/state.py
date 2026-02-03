@@ -36,6 +36,8 @@ def default_state(
         "current_step_id": None,
         "current_step_text": None,
         "fix_attempts": 0,
+        "last_bootstrap_rc": None,
+        "last_rollout_rc": None,
         "last_test_rc": None,
         "last_deploy_setup_rc": None,
         "last_deploy_health_rc": None,
@@ -68,4 +70,3 @@ def save_state(path: Path, state: dict[str, Any]) -> None:
 def append_jsonl(path: Path, record: dict[str, Any]) -> None:
     with path.open("a", encoding="utf-8") as f:
         f.write(json.dumps(record, ensure_ascii=False) + "\n")
-
