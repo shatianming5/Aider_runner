@@ -13,6 +13,7 @@ To make results comparable across repos (evaluation + rollout + post-training), 
 
 Recommended minimum:
 
+- `ok`: boolean (true only when the run produced a real score)
 - `score`: number (or `eval.score`)
 - `ts`: ISO timestamp string
 - `run_id`: string (you can copy `AIDER_FSM_RUN_ID`)

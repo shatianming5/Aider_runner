@@ -96,29 +96,81 @@ def make_execute_prompt(snapshot_text: str, step: dict[str, str]) -> str:
     )
 
 
-def make_scaffold_contract_prompt(repo: Path, *, pipeline_rel: str, require_metrics: bool) -> str:
+def make_scaffold_contract_prompt(
+    repo: Path,
+    *,
+    pipeline_rel: str,
+    require_metrics: bool,
+    command_hints: list[str] | None = None,
+) -> str:
     """中文说明：
     - 含义：生成“合同 scaffolder”的提示词，用于在目标 repo 缺失 pipeline.yml 时自动补齐契约。
-    - 内容：强制要求 pipeline v1 schema；只允许写 `pipeline.yml` 与 `.aider_fsm/**`；要求 evaluation 至少能写出 metrics.json（含 score）；并提供 discovery checklist 以减少凭空猜测。
-    - 可简略：否（这是“只给 URL 也能跑通”的关键能力与安全边界）。
+    - 内容：强制要求 pipeline v1 schema；只允许写 `pipeline.yml` 与 `.aider_fsm/**`；要求 deploy/setup 产出 `.aider_fsm/runtime_env.json`，并使 rollout/evaluation 能在读取该 env 的前提下自动执行与落盘。
+    - 可简略：否（这是“只给 URL 也能跑”的关键能力与安全边界；同时避免在 runner 里写 benchmark-specific 逻辑）。
     """
-    required_keys = ["score"] if require_metrics else []
+    # For contract runs we want to avoid "silent placeholders". Requiring an explicit `ok` flag
+    # makes it easier for downstream automation (and humans) to distinguish real scores vs fallbacks.
+    required_keys = ["score", "ok"] if require_metrics else []
     required_line = ""
     if required_keys:
         required_line = f"- `.aider_fsm/metrics.json` must include keys: {required_keys}\n"
+    hints = [str(s).strip() for s in (command_hints or []) if str(s).strip()]
+    hints_block = ""
+    if hints:
+        shown = hints[:20]
+        hints_block = (
+            "\n"
+            "[CANDIDATE_COMMAND_HINTS]\n"
+            "The following commands were extracted from repo docs (README/docs). Prefer using them for REAL execution.\n"
+            "If hints exist, evaluation.sh MUST run (at least) one hint (or a direct adaptation) and derive score from its outputs.\n"
+            "Do NOT replace repo-provided evaluation with proxy scoring (micro-benchmarks). If hints cannot run, write ok=false + reason and EXIT NON-ZERO.\n"
+            + "".join([f"- {line}\n" for line in shown])
+            + ("\n" if len(hints) > len(shown) else "")
+        )
     return (
         "You are a contract scaffolder.\n"
         "\n"
         "Goal: make this repo runnable by the OpenCode-FSM runner in one command by creating a minimal, repo-local contract.\n"
         "Your output must be generic: do NOT embed repo-specific hardcoding unless it is explicitly present in the repo.\n"
+        "The runner will NOT contain any benchmark-specific adapters. Therefore your contract must self-describe deploy + runtime env + rollout + evaluation.\n"
         "\n"
         "IMPORTANT: `pipeline.yml` MUST follow the runner's v1 schema (top-level keys like: tests, deploy, rollout, benchmark, auth, "
         "evaluation, security, artifacts). Do NOT invent a custom schema (e.g. DO NOT write a top-level `stages:` list).\n"
         "\n"
+        "Hard requirements (must satisfy even if the repo provides no docs):\n"
+        "1) `deploy.setup` MUST write `.aider_fsm/runtime_env.json` (a JSON object).\n"
+        "2) `rollout` MUST write `.aider_fsm/rollout.json` (a JSON object).\n"
+        "3) `evaluation` MUST write `.aider_fsm/metrics.json` (a JSON object).\n"
+        "4) Stages must be non-interactive and bounded (timeouts).\n"
+        "5) If real deploy/rollout/evaluation cannot be inferred from the repo, write the required JSON file(s) with `ok=false`/`score=0` and a clear `reason`, and EXIT NON-ZERO.\n"
+        "   Do NOT pretend success by exiting 0 with placeholder metrics.\n"
+        "6) If `.aider_fsm/stages/*.sh` already exist, prefer EDITING them instead of rewriting from scratch.\n"
+        "\n"
+        "runtime_env.json schema (recommended minimal):\n"
+        "{\n"
+        '  "ts": "...",\n'
+        '  "run_id": "...",\n'
+        '  "service": { "base_url": "...", "health_url": "..." },\n'
+        '  "inference": { "type": "local_hf|openai_compat", "model_dir": "...", "openai_base_url": "...", "model": "...", "notes": "do not store secrets here" },\n'
+        '  "paths": { "rollout_path": ".aider_fsm/rollout.json", "metrics_path": ".aider_fsm/metrics.json" }\n'
+        "}\n"
+        "\n"
         "Safety constraints for generated stage scripts:\n"
-        "- Do NOT run dependency installs or network-heavy commands in stage scripts (no `pip install`, no `npm ci`, no `conda`, etc).\n"
-        "- Do NOT run long workloads; keep stages bounded and unattended.\n"
-        "- Prefer safe no-op stages (`echo not_configured; exit 0`) unless the repo explicitly provides runnable commands.\n"
+        "- Prefer repo-provided commands (README/Makefile/CI). Avoid guessing ports/flags.\n"
+        "- Your rollout/evaluation scripts MUST support these inputs (do NOT hardcode paths):\n"
+        "  - `AIDER_RUNTIME_ENV_PATH`: path to runtime_env.json (use if set)\n"
+        "  - `AIDER_TRAINED_MODEL_DIR`: optional path to a trained HF model directory (use if set; else read runtime_env.json.inference.model_dir if present)\n"
+        "- Prefer using `$AIDER_FSM_PYTHON` (if set) to run Python modules to avoid hardcoding python paths.\n"
+        "- If you need a smoke subset, respect optional `AIDER_EVAL_MODE=smoke|full` and `AIDER_EVAL_LIMIT` env vars.\n"
+        "- Do NOT use `sed -i` (not portable between macOS and Linux). Prefer writing JSON via python.\n"
+        "- If you embed python via heredoc, do NOT rely on `sys.argv[...]` (use env vars instead) and NEVER put shell args after the heredoc terminator.\n"
+        "- If you need to expose the trained model as a service, start an OpenAI-compatible server and write its base_url into runtime_env.json (no hardcoded ports).\n"
+        "- Built-in helper you may use in stage scripts (runner will set `$AIDER_FSM_PYTHON` and PYTHONPATH):\n"
+        "  - Start local server (no hardcoded ports): `RUNTIME_ENV=${AIDER_RUNTIME_ENV_PATH:-.aider_fsm/runtime_env.json}; $AIDER_FSM_PYTHON -m runner.ml.serve_openai_compat start --backend hf --model-dir \"$AIDER_TRAINED_MODEL_DIR\" --host 127.0.0.1 --port 0 --runtime-env-out \"$RUNTIME_ENV\" --pid-file .aider_fsm/server.pid --log-file \"$AIDER_FSM_ARTIFACTS_DIR/server.log\"`\n"
+        "  - Stop local server:  `$AIDER_FSM_PYTHON -m runner.ml.serve_openai_compat stop --pid-file .aider_fsm/server.pid`\n"
+        "- It is OK to set up an isolated environment via `.aider_fsm/bootstrap.yml` (e.g., venv + requirements) if required and deterministic.\n"
+        "- If you use docker/compose, write all docker commands in `.aider_fsm/stages/*.sh` and record how to stop them in `deploy_teardown.sh`.\n"
+        "- Keep workloads bounded; use small smoke settings when possible.\n"
         "\n"
         "Use this minimal skeleton (edit as needed):\n"
         "```yaml\n"
@@ -150,7 +202,7 @@ def make_scaffold_contract_prompt(repo: Path, *, pipeline_rel: str, require_metr
         "  run_cmds:\n"
         "    - bash .aider_fsm/stages/evaluation.sh\n"
         "  metrics_path: .aider_fsm/metrics.json\n"
-        "  required_keys: [score]\n"
+        "  required_keys: [score, ok]\n"
         "\n"
         "benchmark:\n"
         "  run_cmds:\n"
@@ -187,10 +239,11 @@ def make_scaffold_contract_prompt(repo: Path, *, pipeline_rel: str, require_metr
         "- `.aider_fsm/stages/evaluation.sh`\n"
         "- `.aider_fsm/stages/benchmark.sh`\n"
         "- Optional: `.aider_fsm/bootstrap.yml` ONLY if the repo clearly documents deterministic, non-interactive setup.\n"
+        "- Required output file: `.aider_fsm/runtime_env.json` (written by deploy_setup)\n"
         "\n"
         "Two-tier behavior:\n"
         "A) Prefer REAL execution: if the repo clearly provides commands, wire them into the stage scripts.\n"
-        "B) Otherwise SAFE no-op: stages may echo `not_configured` and exit 0, but evaluation MUST still write metrics.\n"
+        "B) Otherwise FAIL-FAST: write the required JSON files with `ok=false` and a clear `reason`, then exit non-zero so the runner can trigger auto-repair.\n"
         "\n"
         "Hard constraints:\n"
         f"1) You may ONLY write `{pipeline_rel}` and files under `.aider_fsm/`.\n"
@@ -204,11 +257,17 @@ def make_scaffold_contract_prompt(repo: Path, *, pipeline_rel: str, require_metr
         "2) Use `rg -n` to search for: test, pytest, npm test, make test, docker compose, benchmark, evaluate, rollout\n"
         "3) Only run lightweight commands when needed (e.g. `python -V`, `pytest --version`, `npm -v`, `make -n test`).\n"
         "4) Avoid long-running training; prefer bounded smoke commands if possible.\n"
+        f"{hints_block}"
         "\n"
         "Acceptance requirements:\n"
         "- `pipeline.yml` must be `version: 1`.\n"
+        "- `deploy_setup.sh` must write a JSON object to `.aider_fsm/runtime_env.json`.\n"
+        "- `rollout.sh` must write a JSON object to `.aider_fsm/rollout.json`.\n"
+        "- `rollout.sh` and `evaluation.sh` must support `AIDER_RUNTIME_ENV_PATH` and optional `AIDER_TRAINED_MODEL_DIR` (no hardcoded model paths).\n"
         "- Evaluation must write a JSON object to `.aider_fsm/metrics.json`.\n"
-        "- If evaluation is not configured, write: `{ \"score\": 0, \"note\": \"evaluation_not_configured\" }` (plus optional fields).\n"
+        "- `metrics.json` MUST include `ok` (boolean) and `score` (number). Exit 0 ONLY when `ok=true` and the score is from real evaluation.\n"
+        "- Do NOT hardcode score values (e.g., `score=0.42`). Derive score from real benchmark execution and parse its outputs.\n"
+        "- If evaluation cannot run, write `ok=false` + `reason`, then exit non-zero (do NOT emit placeholder success).\n"
         f"{required_line}"
         "\n"
         f"REPO_ROOT: {repo}\n"

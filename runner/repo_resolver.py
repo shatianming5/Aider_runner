@@ -478,8 +478,30 @@ def prepare_repo(repo_arg: str, *, clones_dir: Path | None = None) -> PreparedRe
 
     # Depth=1 keeps it fast; users can re-run with a local clone if needed.
     cmd = ["git", "clone", "--depth", "1", url, str(dest)]
-    proc = subprocess.run(cmd, text=True, capture_output=True, env=env)
-    if proc.returncode != 0:
+    try:
+        clone_timeout = float(os.environ.get("AIDER_FSM_GIT_CLONE_TIMEOUT_SECONDS") or 90)
+    except Exception:
+        clone_timeout = 90.0
+    try:
+        proc = subprocess.run(cmd, text=True, capture_output=True, env=env, timeout=clone_timeout)
+        rc = int(proc.returncode)
+        out = proc.stdout or ""
+        err = proc.stderr or ""
+    except subprocess.TimeoutExpired as e:
+        rc = 124
+        out_raw = getattr(e, "stdout", "") or ""
+        err_raw = getattr(e, "stderr", "") or ""
+        if isinstance(out_raw, bytes):
+            out = out_raw.decode("utf-8", errors="replace")
+        else:
+            out = str(out_raw)
+        if isinstance(err_raw, bytes):
+            err = err_raw.decode("utf-8", errors="replace")
+        else:
+            err = str(err_raw)
+        err = (err + "\n" if err else "") + f"git_clone_timeout_exceeded: {clone_timeout}s"
+
+    if rc != 0:
         # Clean up partial clones to avoid confusing fallbacks.
         shutil.rmtree(dest, ignore_errors=True)
 
@@ -493,18 +515,18 @@ def prepare_repo(repo_arg: str, *, clones_dir: Path | None = None) -> PreparedRe
             raise RuntimeError(
                 "git clone failed; GitHub archive fallback also failed\n"
                 f"git_cmd: {' '.join(cmd)}\n"
-                f"git_rc: {proc.returncode}\n"
-                f"git_stdout: {proc.stdout[-2000:]}\n"
-                f"git_stderr: {proc.stderr[-2000:]}\n"
+                f"git_rc: {rc}\n"
+                f"git_stdout: {out[-2000:]}\n"
+                f"git_stderr: {err[-2000:]}\n"
                 f"archive_detail: {detail}\n"
             )
 
         raise RuntimeError(
             "git clone failed\n"
             f"cmd: {' '.join(cmd)}\n"
-            f"rc: {proc.returncode}\n"
-            f"stdout: {proc.stdout[-2000:]}\n"
-            f"stderr: {proc.stderr[-2000:]}\n"
+            f"rc: {rc}\n"
+            f"stdout: {out[-2000:]}\n"
+            f"stderr: {err[-2000:]}\n"
         )
 
     # Make sure local commits (if any) won't fail due to missing identity.

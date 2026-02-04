@@ -120,6 +120,14 @@ def parse_tool_calls(text: str) -> list[ToolCall]:
             if tag in ("read", "edit") and isinstance(data.get("filePath"), str):
                 calls.append(ToolCall(kind="file", start=m.start(), payload=data))
 
+        # Compatibility: some agents emit `<tool_call>{...json...}</tool_call>` without inner `<read>/<bash>` tags.
+        data2 = _try_json(inner)
+        if data2:
+            if isinstance(data2.get("command"), str):
+                calls.append(ToolCall(kind="bash", start=m.start(), payload=data2))
+            if isinstance(data2.get("filePath"), str):
+                calls.append(ToolCall(kind="file", start=m.start(), payload=data2))
+
     for m in _FENCE_RE.finditer(text):
         lang = (m.group("lang") or "").strip().lower()
         body = (m.group("body") or "").strip()
@@ -313,6 +321,11 @@ class ToolPolicy:
             if _within_root(aider, path):
                 return True, None
             return False, "scaffold_contract_allows_only_pipeline_yml_and_aider_fsm"
+        if p == "repair_contract":
+            aider = (self.repo / ".aider_fsm").resolve()
+            if _within_root(aider, path):
+                return True, None
+            return False, "repair_contract_allows_only_aider_fsm"
         if p.startswith("plan_update") or p in ("mark_done", "block_step"):
             if path == self.plan_path:
                 return True, None

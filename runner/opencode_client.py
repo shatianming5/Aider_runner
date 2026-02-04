@@ -67,7 +67,7 @@ def select_bash_mode(*, purpose: str, default_bash_mode: str, scaffold_bash_mode
     p = str(purpose or "").strip().lower()
     default = str(default_bash_mode or "restricted").strip().lower() or "restricted"
     scaffold = str(scaffold_bash_mode or default).strip().lower() or default
-    if p == "scaffold_contract":
+    if p in ("scaffold_contract", "repair_contract"):
         return scaffold
     return default
 
@@ -223,7 +223,8 @@ class OpenCodeClient(AgentClient):
             # Best-effort dispose (does not necessarily terminate the server process).
             if self._proc is not None:
                 try:
-                    self._request_json("POST", "/instance/dispose", body=None, require_auth=True)
+                    # Do not block shutdown on a potentially wedged server.
+                    self._request_json("POST", "/instance/dispose", body=None, require_auth=True, timeout_seconds=5)
                 except Exception:
                     pass
         finally:
@@ -379,7 +380,7 @@ class OpenCodeClient(AgentClient):
             require_auth=bool(self._server.password),
         )
 
-    def _request_json(self, method: str, path: str, *, body: Any, require_auth: bool) -> Any:
+    def _request_json(self, method: str, path: str, *, body: Any, require_auth: bool, timeout_seconds: float | None = None) -> Any:
         """中文说明：
         - 含义：执行一次 OpenCode HTTP 请求并解析 JSON 响应。
         - 内容：支持可选 Basic Auth；body 会被编码为 JSON；HTTPError/URLError 会被包装为 OpenCodeRequestError（截断 detail 以控制体积）。
@@ -396,8 +397,9 @@ class OpenCodeClient(AgentClient):
             data = json.dumps(body, ensure_ascii=False).encode("utf-8")
 
         req = Request(url, method=method, data=data, headers=headers)
+        timeout = self._timeout_seconds if timeout_seconds is None else float(timeout_seconds)
         try:
-            with urlopen(req, timeout=self._timeout_seconds) as resp:
+            with urlopen(req, timeout=timeout) as resp:
                 raw = resp.read()
                 if not raw:
                     return None

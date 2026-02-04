@@ -219,6 +219,29 @@ def test_run_pipeline_verification_evaluation_metrics_missing_key(tmp_path: Path
     assert any("missing_keys" in e for e in (verify.metrics_errors or []))
 
 
+def test_run_pipeline_verification_required_ok_enforces_true(tmp_path: Path):
+    """中文说明：
+    - 含义：当 required_keys 包含 `ok` 时，runner 需要 `metrics.ok === true`，避免 placeholder success。
+    - 内容：写入 `ok:false` 的 metrics.json，required_keys=[score,ok]，断言 failed_stage=metrics 且 errors 包含 ok_not_true。
+    - 可简略：否（这是 contract 防呆关键路径，避免 silently pass）。
+    """
+    (tmp_path / "metrics.json").write_text('{"ok": false, "score": 0}\n', encoding="utf-8")
+    pipeline = PipelineSpec(
+        evaluation_run_cmds=[_py_cmd(0)],
+        evaluation_metrics_path="metrics.json",
+        evaluation_required_keys=["score", "ok"],
+    )
+    verify = run_pipeline_verification(
+        tmp_path,
+        pipeline=pipeline,
+        tests_cmds=[_py_cmd(0)],
+        artifacts_dir=tmp_path / "artifacts",
+    )
+    assert verify.ok is False
+    assert verify.failed_stage == "metrics"
+    assert any("ok_not_true" in e for e in (verify.metrics_errors or []))
+
+
 def test_run_pipeline_verification_safe_mode_blocks_sudo(tmp_path: Path):
     """中文说明：
     - 含义：验证 safe security mode 会拦截 `sudo` 等危险命令。

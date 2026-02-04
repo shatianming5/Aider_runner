@@ -1,0 +1,16 @@
+# Optional ML dependencies for training/inference based benchmarks.
+#
+# NOTE:
+# - Keep `requirements.txt` minimal (PyYAML + pytest) so the runner stays lightweight.
+# - Install this file only when you need local 0.5B model training/inference.
+#
+# Example:
+#   pip install -r requirements.txt
+#   pip install -r requirements-ml.txt
+#
+torch
+transformers
+datasets
+accelerate
+peft
+safetensors

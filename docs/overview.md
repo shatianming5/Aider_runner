@@ -30,3 +30,8 @@ The intent is to integrate with agent projects where you need **repeatable bench
 - `docs/pipeline_spec.md`
 - `docs/bootstrap_spec.md`
 - `docs/metrics_schema.md`
+
+## Optional: local model utilities
+
+This repo includes an optional LoRA training utility (`python -m runner.ml.train_lora`).
+It requires additional dependencies (see `requirements-ml.txt`).

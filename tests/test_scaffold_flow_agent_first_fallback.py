@@ -52,13 +52,79 @@ class _AgentWritesValidPipeline:
         - 可简略：否（该写入内容决定 scaffold 是否能通过，是测试核心）。
         """
         if purpose == "scaffold_contract":
-            py = shlex.quote(sys.executable)
             ok_cmd = _ok_cmd()
-            write_metrics = (
-                f"{py} -c \"import json, pathlib; "
-                "pathlib.Path('.aider_fsm').mkdir(parents=True, exist_ok=True); "
-                "pathlib.Path('.aider_fsm/metrics.json').write_text(json.dumps({'score': 0})+'\\\\n')\""
+            # Create required stage scripts under `.aider_fsm/stages/`.
+            stages = self._repo / ".aider_fsm" / "stages"
+            stages.mkdir(parents=True, exist_ok=True)
+            (stages / "tests.sh").write_text("#!/usr/bin/env bash\nset -euo pipefail\necho ok\n", encoding="utf-8")
+            (stages / "deploy_setup.sh").write_text(
+                "\n".join(
+                    [
+                        "#!/usr/bin/env bash",
+                        "set -euo pipefail",
+                        "mkdir -p .aider_fsm",
+                        f"{shlex.quote(sys.executable)} - <<'PY'",
+                        "import json, os, pathlib",
+                        "p = pathlib.Path('.aider_fsm/runtime_env.json')",
+                        "p.write_text(json.dumps({",
+                        "  'ts': '',",
+                        "  'run_id': os.getenv('AIDER_FSM_RUN_ID',''),",
+                        "  'service': {},",
+                        "  'paths': {'rollout_path': '.aider_fsm/rollout.json', 'metrics_path': '.aider_fsm/metrics.json'},",
+                        "}, ensure_ascii=False) + '\\n', encoding='utf-8')",
+                        "PY",
+                        "",
+                    ]
+                ),
+                encoding="utf-8",
             )
+            (stages / "deploy_health.sh").write_text(
+                "#!/usr/bin/env bash\nset -euo pipefail\ntest -f .aider_fsm/runtime_env.json\n",
+                encoding="utf-8",
+            )
+            (stages / "deploy_teardown.sh").write_text(
+                "#!/usr/bin/env bash\nset -euo pipefail\necho teardown_skipped\n",
+                encoding="utf-8",
+            )
+            (stages / "rollout.sh").write_text(
+                "\n".join(
+                    [
+                        "#!/usr/bin/env bash",
+                        "set -euo pipefail",
+                        "mkdir -p .aider_fsm",
+                        f"{shlex.quote(sys.executable)} - <<'PY'",
+                        "import json, os, pathlib",
+                        "pathlib.Path('.aider_fsm/rollout.json').write_text(",
+                        "  json.dumps({'rollout': {'ok': True}, 'run_id': os.getenv('AIDER_FSM_RUN_ID','')}, ensure_ascii=False) + '\\n'",
+                        ")",
+                        "PY",
+                        "",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            (stages / "evaluation.sh").write_text(
+                "\n".join(
+                    [
+                        "#!/usr/bin/env bash",
+                        "set -euo pipefail",
+                        "mkdir -p .aider_fsm",
+                        f"{shlex.quote(sys.executable)} - <<'PY'",
+                        "import json, os, pathlib",
+                        "pathlib.Path('.aider_fsm/metrics.json').write_text(",
+                        "  json.dumps({'ok': True, 'score': 1, 'run_id': os.getenv('AIDER_FSM_RUN_ID','')}, ensure_ascii=False) + '\\n'",
+                        ")",
+                        "PY",
+                        "",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            (stages / "benchmark.sh").write_text(
+                "#!/usr/bin/env bash\nset -euo pipefail\necho benchmark_skipped\n",
+                encoding="utf-8",
+            )
+
             (self._repo / "pipeline.yml").write_text(
                 "\n".join(
                     [
@@ -69,11 +135,22 @@ class _AgentWritesValidPipeline:
                         "tests:",
                         "  cmds:",
                         f"    - {json.dumps(ok_cmd)}",
-                        "benchmark:",
+                        "deploy:",
+                        "  setup_cmds:",
+                        "    - bash .aider_fsm/stages/deploy_setup.sh",
+                        "  health_cmds:",
+                        "    - bash .aider_fsm/stages/deploy_health.sh",
+                        "  teardown_policy: on_failure",
+                        "  teardown_cmds:",
+                        "    - bash .aider_fsm/stages/deploy_teardown.sh",
+                        "rollout:",
                         "  run_cmds:",
-                        f"    - {json.dumps(write_metrics)}",
+                        "    - bash .aider_fsm/stages/rollout.sh",
+                        "evaluation:",
+                        "  run_cmds:",
+                        "    - bash .aider_fsm/stages/evaluation.sh",
                         "  metrics_path: .aider_fsm/metrics.json",
-                        "  required_keys: [score]",
+                        "  required_keys: [score, ok]",
                         "artifacts:",
                         "  out_dir: .aider_fsm/artifacts",
                         "",
@@ -208,6 +285,8 @@ def test_opencode_scaffold_agent_first_success(tmp_path: Path):
     assert rc == 0
 
     assert (repo / "pipeline.yml").exists()
+    assert (repo / ".aider_fsm" / "runtime_env.json").exists()
+    assert (repo / ".aider_fsm" / "rollout.json").exists()
     assert (repo / ".aider_fsm" / "metrics.json").exists()
 
     run_dir = _latest_run_dir(artifacts_base)

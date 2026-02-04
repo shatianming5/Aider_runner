@@ -3,13 +3,14 @@ from __future__ import annotations
 import json
 import os
 import shlex
+import sys
 import time
 from pathlib import Path
 from typing import Any
 
 from .paths import resolve_workdir
 from .pipeline_spec import PipelineSpec
-from .security import cmd_allowed, looks_interactive, safe_env
+from .security import audit_bash_script, cmd_allowed, looks_interactive, safe_env
 from .subprocess_utils import (
     STDIO_TAIL_CHARS,
     read_text_if_exists,
@@ -187,20 +188,24 @@ def _run_stage(
                     timed_out=False,
                 )
             else:
-                eff_timeout = timeout_seconds
-                if pipeline and pipeline.security_max_cmd_seconds:
-                    eff_timeout = (
-                        int(pipeline.security_max_cmd_seconds)
-                        if eff_timeout is None
-                        else min(int(eff_timeout), int(pipeline.security_max_cmd_seconds))
+                ok, audit_reason = audit_bash_script(cmd, repo=repo, workdir=workdir, pipeline=pipeline)
+                if not ok:
+                    res = CmdResult(cmd=cmd, rc=126, stdout="", stderr=audit_reason or "blocked_by_script_audit", timed_out=False)
+                else:
+                    eff_timeout = timeout_seconds
+                    if pipeline and pipeline.security_max_cmd_seconds:
+                        eff_timeout = (
+                            int(pipeline.security_max_cmd_seconds)
+                            if eff_timeout is None
+                            else min(int(eff_timeout), int(pipeline.security_max_cmd_seconds))
+                        )
+                    res = run_cmd_capture(
+                        cmd,
+                        workdir,
+                        timeout_seconds=eff_timeout,
+                        env=env2,
+                        interactive=bool(interactive and unattended == "guided"),
                     )
-                res = run_cmd_capture(
-                    cmd,
-                    workdir,
-                    timeout_seconds=eff_timeout,
-                    env=env2,
-                    interactive=bool(interactive and unattended == "guided"),
-                )
 
             results.append(res)
             write_cmd_artifacts(artifacts_dir, f"{stage}_cmd{cmd_idx:02d}_try{attempt:02d}", res)
@@ -279,6 +284,13 @@ def run_pipeline_verification(
         return False
 
     env_base = dict(os.environ)
+    runner_root = Path(__file__).resolve().parents[1]
+    env_base.setdefault("AIDER_FSM_RUNNER_ROOT", str(runner_root))
+    env_base.setdefault("AIDER_FSM_PYTHON", sys.executable)
+    existing_pp = str(env_base.get("PYTHONPATH") or "")
+    parts = [p for p in existing_pp.split(os.pathsep) if p]
+    if str(runner_root) not in parts:
+        env_base["PYTHONPATH"] = str(runner_root) + (os.pathsep + existing_pp if existing_pp else "")
 
     def _workdir_or_fail(stage: str, raw: str | None) -> tuple[Path, StageResult | None]:
         """中文说明：
@@ -592,6 +604,27 @@ def run_pipeline_verification(
                     metrics_errors=metrics_errors,
                 )
 
+            # Convention: if the contract requires an explicit boolean `ok`, treat `ok != true` as failure.
+            # This helps prevent "placeholder success" where scripts exit 0 but write fallback metrics.
+            if "ok" in (pipeline.evaluation_required_keys or []):
+                if eval_metrics.get("ok") is not True:
+                    failed_stage = "metrics"
+                    metrics_errors.append("evaluation.ok_not_true")
+                    return VerificationResult(
+                        ok=False,
+                        failed_stage=failed_stage,
+                        auth=auth_res,
+                        tests=tests_res,
+                        deploy_setup=deploy_setup_res,
+                        deploy_health=deploy_health_res,
+                        rollout=rollout_res,
+                        evaluation=eval_res,
+                        benchmark=bench_res,
+                        metrics_path=eval_metrics_path,
+                        metrics=eval_metrics,
+                        metrics_errors=metrics_errors,
+                    )
+
             # Prefer evaluation metrics as the "primary" metrics payload.
             if metrics_path is None:
                 metrics_path = eval_metrics_path
@@ -707,6 +740,25 @@ def run_pipeline_verification(
                         metrics=bench_metrics,
                         metrics_errors=metrics_errors,
                     )
+
+                if "ok" in (pipeline.benchmark_required_keys or []):
+                    if bench_metrics.get("ok") is not True:
+                        failed_stage = "metrics"
+                        metrics_errors.append("benchmark.ok_not_true")
+                        return VerificationResult(
+                            ok=False,
+                            failed_stage=failed_stage,
+                            auth=auth_res,
+                            tests=tests_res,
+                            deploy_setup=deploy_setup_res,
+                            deploy_health=deploy_health_res,
+                            rollout=rollout_res,
+                            evaluation=eval_res,
+                            benchmark=bench_res,
+                            metrics_path=bench_metrics_path,
+                            metrics=bench_metrics,
+                            metrics_errors=metrics_errors,
+                        )
 
                 # Back-compat: if no evaluation metrics were produced, use benchmark metrics as primary.
                 if metrics_path is None:

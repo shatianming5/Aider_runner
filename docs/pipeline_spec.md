@@ -65,12 +65,20 @@ See `examples/pipeline.example.yml` and `examples/pipeline.benchmark_skeleton.ym
 - `required_keys`: list of keys that must exist in the metrics JSON
 - `timeout_seconds`, `retries`, `env`, `workdir`
 
+Convention:
+
+- If `required_keys` includes `ok`, the runner additionally requires `metrics.ok === true` (to avoid “placeholder success” metrics).
+
 ## `benchmark` (optional)
 
 - `run_cmds`
 - `metrics_path`: path to a JSON file produced by the benchmark (relative to repo)
 - `required_keys`: list of keys that must exist in the metrics JSON
 - `timeout_seconds`, `retries`, `env`, `workdir`
+
+Convention:
+
+- If `required_keys` includes `ok`, the runner additionally requires `metrics.ok === true`.
 
 See `docs/metrics_schema.md` for a recommended stable schema across evaluation/rollout/training.
 

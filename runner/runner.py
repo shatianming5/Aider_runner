@@ -10,6 +10,8 @@ from typing import Any
 from .actions import run_pending_actions
 from .agent_client import AgentClient, AgentResult
 from .bootstrap import run_bootstrap
+from .contract_hints import suggest_contract_hints
+from .env_local import _ensure_contract_stage_skeleton, _write_fallback_pipeline_yml
 from .opencode_client import OpenCodeClient
 from .pipeline_spec import PipelineSpec, load_pipeline_spec
 from .pipeline_verify import fmt_stage_tail, run_pipeline_verification, stage_rc
@@ -26,6 +28,7 @@ from .prompts import (
 from .snapshot import build_snapshot, get_git_changed_files, git_checkout, non_plan_changes
 from .state import append_jsonl, default_state, ensure_dirs, now_iso, load_state, save_state
 from .subprocess_utils import read_text_if_exists, run_cmd, tail, write_json, write_text
+from .scaffold_validation import validate_scaffolded_files, validate_scaffolded_pipeline
 from .types import VerificationResult
 
 
@@ -221,12 +224,17 @@ def run(config: RunnerConfig, *, agent: AgentClient | None = None) -> int:
         scaffold_err = ""
         try:
             scaffold_agent = _ensure_agent(pipeline_rel_override="pipeline.yml")
+            _ensure_contract_stage_skeleton(repo)
+            hints = suggest_contract_hints(repo)
+            if hints.commands:
+                write_text(artifacts_run_dir / "scaffold_command_hints.txt", "\n".join(hints.commands) + "\n")
             res = _agent_run(
                 scaffold_agent,
                 make_scaffold_contract_prompt(
                     repo,
                     pipeline_rel="pipeline.yml",
                     require_metrics=bool(config.scaffold_require_metrics),
+                    command_hints=hints.commands,
                 ),
                 log_path=log_path,
                 iter_idx=0,
@@ -248,66 +256,33 @@ def run(config: RunnerConfig, *, agent: AgentClient | None = None) -> int:
                 },
             )
 
+        # Fallback: if the model forgot tool calls and pipeline.yml is still missing, write a minimal pipeline.yml
+        # referencing `.aider_fsm/stages/*.sh` so downstream repair can proceed.
+        pipeline_path = (repo / "pipeline.yml").resolve()
+        if not pipeline_path.exists():
+            try:
+                _write_fallback_pipeline_yml(repo, pipeline_rel="pipeline.yml", require_metrics=bool(config.scaffold_require_metrics))
+                write_text(artifacts_run_dir / "scaffold_fallback_used.txt", "wrote_fallback_pipeline_yml\n")
+            except Exception:
+                pass
+
         # Validate pipeline parseability (and minimal contract requirements). If missing/invalid, fail fast.
         pipeline_ok = False
         pipeline_validation_reason = ""
-        pipeline_path = (repo / "pipeline.yml").resolve()
         if pipeline_path.exists():
             try:
                 parsed = load_pipeline_spec(pipeline_path)
-                missing_fields: list[str] = []
-                if parsed.security_max_cmd_seconds is None or int(parsed.security_max_cmd_seconds) <= 0:
-                    missing_fields.append("security.max_cmd_seconds")
-
-                if bool(config.scaffold_require_metrics):
-                    required_keys = {"score"}
-                    eval_ok = (
-                        bool(list(parsed.evaluation_run_cmds or []))
-                        and bool(str(parsed.evaluation_metrics_path or "").strip())
-                        and required_keys.issubset(set(parsed.evaluation_required_keys or []))
-                    )
-                    bench_ok = (
-                        bool(list(parsed.benchmark_run_cmds or []))
-                        and bool(str(parsed.benchmark_metrics_path or "").strip())
-                        and required_keys.issubset(set(parsed.benchmark_required_keys or []))
-                    )
-
-                    # Require at least ONE metrics-producing stage (evaluation or benchmark).
-                    if not (eval_ok or bench_ok):
-                        eval_touched = bool(
-                            (parsed.evaluation_run_cmds or [])
-                            or str(parsed.evaluation_metrics_path or "").strip()
-                            or (parsed.evaluation_required_keys or [])
-                        )
-                        bench_touched = bool(
-                            (parsed.benchmark_run_cmds or [])
-                            or str(parsed.benchmark_metrics_path or "").strip()
-                            or (parsed.benchmark_required_keys or [])
-                        )
-
-                        if eval_touched or not bench_touched:
-                            if not list(parsed.evaluation_run_cmds or []):
-                                missing_fields.append("evaluation.run_cmds")
-                            if not str(parsed.evaluation_metrics_path or "").strip():
-                                missing_fields.append("evaluation.metrics_path")
-                            if not required_keys.issubset(set(parsed.evaluation_required_keys or [])):
-                                missing_fields.append("evaluation.required_keys (missing: score)")
-
-                        if bench_touched:
-                            if not list(parsed.benchmark_run_cmds or []):
-                                missing_fields.append("benchmark.run_cmds")
-                            if not str(parsed.benchmark_metrics_path or "").strip():
-                                missing_fields.append("benchmark.metrics_path")
-                            if not required_keys.issubset(set(parsed.benchmark_required_keys or [])):
-                                missing_fields.append("benchmark.required_keys (missing: score)")
-
-                if missing_fields:
+                missing_fields = validate_scaffolded_pipeline(parsed, require_metrics=bool(config.scaffold_require_metrics))
+                missing_files = validate_scaffolded_files(repo)
+                if missing_fields or missing_files:
                     pipeline_validation_reason = "missing_scaffold_requirements"
                     write_text(
                         artifacts_run_dir / "scaffold_agent_pipeline_validation_error.txt",
                         "Pipeline is parseable but does not meet scaffold requirements:\n"
                         + "\n".join([f"- {x}" for x in missing_fields])
-                        + "\n",
+                        + ("\n" if missing_fields else "")
+                        + "\n".join([f"- missing_file: {x}" for x in missing_files])
+                        + ("\n" if missing_files else ""),
                     )
                     append_jsonl(
                         log_path,
@@ -318,6 +293,7 @@ def run(config: RunnerConfig, *, agent: AgentClient | None = None) -> int:
                             "event": "scaffold_agent_pipeline_validation_error",
                             "pipeline_path": str(pipeline_path),
                             "missing_fields": missing_fields,
+                            "missing_files": missing_files,
                         },
                     )
                 else:

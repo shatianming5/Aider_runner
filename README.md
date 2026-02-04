@@ -50,6 +50,47 @@ Or:
 python3 -m runner --repo . --goal "你的目标" --test-cmd "pytest -q" --model myproxy/deepseek-v3.2
 ```
 
+### One-shot deploy → rollout → evaluation (no benchmark-specific code)
+
+If you want a minimal “just run it” loop (scaffold contract if missing, then deploy + rollout + evaluation):
+
+```bash
+python3 -m runner.opencode_run --repo . --model myproxy/deepseek-v3.2
+```
+
+To run benchmarks/eval against a locally trained HF model directory (e.g. exported by `python -m runner.ml.train_lora`):
+
+```bash
+python3 -m runner.opencode_run --repo . --trained-model-dir /abs/path/to/model_dir --model myproxy/deepseek-v3.2
+```
+
+You can also inject extra env vars into deploy/rollout/evaluation:
+
+```bash
+python3 -m runner.opencode_run --repo . --env FOO=bar --env BAZ=qux
+```
+
+### Optional: train + benchmark loop (0.5B-ish)
+
+If you want to run a simple train→(smoke)benchmark loop over a list of repos/URLs:
+
+```bash
+pip install -r requirements-ml.txt
+python3 -m runner.ml.train_and_benchmark \
+  --base-model Qwen/Qwen2.5-0.5B-Instruct \
+  --out-root /tmp/aider_train_runs \
+  --benchmarks-file benchmarks.txt \
+  --segments 1 \
+  --steps-per-segment 8 \
+  --opencode-model opencode/gpt-5-nano
+```
+
+To use an existing OpenCode server:
+
+```bash
+OPENCODE_SERVER_PASSWORD=... python3 -m runner.opencode_run --repo . --opencode-url http://127.0.0.1:4096
+```
+
 ### Use an existing OpenCode server
 
 Start a server in your target repo root:

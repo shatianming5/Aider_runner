@@ -52,6 +52,21 @@ def test_parse_tool_calls_detects_self_closing_write_tag():
     assert payload["content"] == "hello\n"
 
 
+def test_parse_tool_calls_detects_raw_json_inside_tool_call_block():
+    """中文说明：
+    - 含义：兼容 `<tool_call>{...json...}</tool_call>` 这种不带 `<read>/<bash>` 内层标签的输出格式。
+    - 内容：提供 raw JSON filePath tool_call，断言可解析为 kind=file。
+    - 可简略：否（该格式在部分模型/代理输出中较常见，缺失会导致 scaffold 无法落盘）。
+    """
+    text = "<tool_call>\n{\"filePath\": \"README.md\"}\n</tool_call>\n"
+    calls = parse_tool_calls(text)
+    assert len(calls) == 1
+    assert calls[0].kind == "file"
+    payload = calls[0].payload
+    assert isinstance(payload, dict)
+    assert payload["filePath"] == "README.md"
+
+
 def test_tool_policy_plan_update_only_allows_plan_md(tmp_path: Path):
     """中文说明：
     - 含义：验证 plan_update_attempt_1 场景下 ToolPolicy 仅允许写 PLAN.md。
