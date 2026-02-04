@@ -31,6 +31,12 @@ from .types import VerificationResult
 
 @dataclass(frozen=True)
 class RunnerConfig:
+    """中文说明：
+    - 含义：Runner 的运行配置（CLI 解析后的集中参数对象）。
+    - 内容：包含 repo、模型、计划路径、pipeline 位置与解析结果、tests 命令、artifacts 目录、迭代/修复上限、unattended 模式，以及 scaffold 合同相关开关。
+    - 可简略：可能（字段较多；可拆分为“核心配置 + 可选特性配置”，但需谨慎保持 CLI/测试兼容）。
+    """
+
     repo: Path
     goal: str
     model: str
@@ -57,6 +63,11 @@ class RunnerConfig:
 
 
 def _load_seed_block(seed_files: list[str]) -> str:
+    """中文说明：
+    - 含义：把 `--seed` 文件内容打包成一个注入到 prompt 的文本块。
+    - 内容：读取每个 seed 文件并截断尾部；形成 `[SEEDS]` 块供 agent 参考（常用于约束/背景/操作指南）。
+    - 可简略：可能（seed 是可选能力；若不需要可移除整个 seed 机制）。
+    """
     if not seed_files:
         return ""
     blocks: list[str] = []
@@ -75,7 +86,17 @@ def _load_seed_block(seed_files: list[str]) -> str:
 
 
 def _probe_versions(repo: Path) -> dict[str, Any]:
+    """中文说明：
+    - 含义：收集运行环境/工具版本信息并写入 artifacts（用于可复现与诊断）。
+    - 内容：记录 python 版本、git head（若可用）、以及 docker/kubectl/helm 等工具版本（best-effort）。
+    - 可简略：是（纯诊断信息；不影响核心闭环）。
+    """
     def _cmd(name: str, cmd: str) -> dict[str, Any]:
+        """中文说明：
+        - 含义：执行一个版本探测命令并返回结构化结果。
+        - 内容：返回 rc/out_tail/err_tail；用于构造 versions.json 的 tools 列表。
+        - 可简略：可能（仅 probe_versions 内部使用；但独立函数便于复用该结构）。
+        """
         rc, out, err = run_cmd(cmd, repo)
         return {"name": name, "cmd": cmd, "rc": rc, "out_tail": out, "err_tail": err}
 
@@ -99,6 +120,11 @@ def _probe_versions(repo: Path) -> dict[str, Any]:
 def _agent_run(
     agent: AgentClient, text: str, *, log_path: Path, iter_idx: int, fsm_state: str, event: str
 ) -> AgentResult:
+    """中文说明：
+    - 含义：对 agent 的一次调用（带结构化 jsonl 日志）。
+    - 内容：在调用前记录 prompt 预览；调用后记录 assistant 回复预览；便于离线审计与重放调试。
+    - 可简略：否（可观测性关键；否则很难定位 agent 行为问题）。
+    """
     append_jsonl(
         log_path,
         {
@@ -126,6 +152,15 @@ def _agent_run(
 
 
 def run(config: RunnerConfig, *, agent: AgentClient | None = None) -> int:
+    """中文说明：
+    - 含义：运行 OpenCode-FSM runner 的主闭环（或 preflight）。
+    - 内容：
+      - 可选：scaffold 合同（pipeline.yml + .aider_fsm/）并校验其满足最小要求
+      - 可选：preflight-only（执行一次 bootstrap+pipeline 验收后退出）
+      - 闭环：snapshot → plan_update(只改 PLAN) → execute_step(只做 Next) → verify(pipeline) → fix_or_replan/mark_done/block_step
+      - 全程写入 `.aider_fsm/artifacts/<run_id>/...` 与 `.aider_fsm/logs/run_<id>.jsonl`
+    - 可简略：否（项目核心主流程）。
+    """
     repo = config.repo
     plan_abs = (repo / config.plan_rel).resolve()
 
@@ -146,6 +181,11 @@ def run(config: RunnerConfig, *, agent: AgentClient | None = None) -> int:
     created_agent = False
 
     def _ensure_agent(*, pipeline_rel_override: str | None = None) -> AgentClient:
+        """中文说明：
+        - 含义：懒加载/复用 AgentClient（OpenCodeClient）。
+        - 内容：若外部传入 agent 则复用；否则按 config 启动/连接 OpenCode server，创建并缓存 agent；支持在 scaffold 阶段覆盖 pipeline_rel。
+        - 可简略：否（避免重复启动 server/重复创建 session；并承载外部 server 认证逻辑）。
+        """
         nonlocal agent, created_agent, config
         if agent is not None:
             return agent
@@ -471,6 +511,11 @@ def run(config: RunnerConfig, *, agent: AgentClient | None = None) -> int:
     bootstrap_ok = False
 
     def _verify_with_bootstrap(*, iter_artifacts_dir: Path) -> VerificationResult:
+        """中文说明：
+        - 含义：执行一次“先 bootstrap（最多一次成功后复用）再 pipeline 验收”的组合流程。
+        - 内容：bootstrap 成功后设置 bootstrap_ok=True，后续迭代不再重复跑；若 bootstrap 失败则直接返回 failed_stage=bootstrap；否则执行 run_pipeline_verification 并把 bootstrap 结果附加到 VerificationResult。
+        - 可简略：可能（组合函数；可以内联到主循环，但会让 run() 更难读）。
+        """
         nonlocal bootstrap_ok
         bootstrap_stage = None
         if bootstrap_path.exists() and not bootstrap_ok:

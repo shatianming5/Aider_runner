@@ -5,12 +5,15 @@ from pathlib import Path
 
 
 def load_dotenv(path: str | Path | None, *, override: bool = False) -> list[str]:
-    """Load KEY=VALUE pairs into os.environ.
+    """中文说明：
+    - 含义：从 dotenv 文件读取 KEY=VALUE 并写入 `os.environ`。
+    - 内容：忽略空行/注释；支持 `export KEY=VALUE`；可选择是否覆盖已存在的环境变量；返回写入的 key 列表（不返回 value 以避免泄漏）。
+    - 可简略：可能（可替换为第三方库 `python-dotenv`；但当前实现更可控/可审计）。
 
-    - Lines starting with `#` or blank lines are ignored.
-    - Supports optional `export KEY=VALUE`.
-    - If override=False, existing env vars are preserved.
-    - Returns the list of keys written (values are intentionally not returned).
+    ---
+
+    English (original intent):
+    Load KEY=VALUE pairs into os.environ.
     """
     if path is None:
         return []
@@ -50,4 +53,3 @@ def load_dotenv(path: str | Path | None, *, override: bool = False) -> list[str]
             written.append(key)
 
     return written
-

@@ -9,10 +9,20 @@ from runner.env_local import open_env, rollout_and_evaluate
 
 
 def _py() -> str:
+    """中文说明：
+    - 含义：返回当前 Python 解释器的 shell-quoted 路径。
+    - 内容：用于拼接 pipeline.yml 里的 rollout/evaluation 命令，避免空格等导致的 shell 解析问题。
+    - 可简略：是（测试 helper；也可在各处直接 `shlex.quote(sys.executable)`）。
+    """
     return shlex.quote(sys.executable)
 
 
 def test_env_local_rollout_and_evaluate(tmp_path: Path):
+    """中文说明：
+    - 含义：验证本地 env 的 rollout + evaluation 能端到端执行并产生可读 metrics。
+    - 内容：构造 pipeline.yml，其中 rollout 写 rollout.json，evaluation 读之并写 metrics.json；调用 `rollout_and_evaluate` 并检查产物与 artifacts。
+    - 可简略：否（同机调用接口是核心能力；该测试覆盖最小可用闭环）。
+    """
     repo = tmp_path / "repo"
     repo.mkdir()
     (repo / ".aider_fsm").mkdir()

@@ -6,6 +6,11 @@ from runner.opencode_tooling import ToolPolicy, parse_tool_calls
 
 
 def test_parse_tool_calls_detects_file_write_json_fence():
+    """中文说明：
+    - 含义：验证 `parse_tool_calls` 能识别 fenced `json` 里的 file-write payload。
+    - 内容：提供一个包含 ```json ...``` 的文本，断言解析出 1 个 kind=file 且 payload 字段正确。
+    - 可简略：可能（可并入更大的表驱动测试；但单测粒度清晰）。
+    """
     text = "hi\n```json\n{\"filePath\":\"PLAN.md\",\"content\":\"# PLAN\\n\"}\n```\n"
     calls = parse_tool_calls(text)
     assert len(calls) == 1
@@ -17,6 +22,11 @@ def test_parse_tool_calls_detects_file_write_json_fence():
 
 
 def test_parse_tool_calls_detects_bash_call():
+    """中文说明：
+    - 含义：验证 `parse_tool_calls` 能识别 fenced `bash` 的工具调用。
+    - 内容：提供一个包含 bash tool 的 JSON 参数，断言解析出 kind=bash 且 command 正确。
+    - 可简略：可能（可参数化更多命令；当前覆盖主路径）。
+    """
     text = "```bash\nbash\n{\"command\":\"git status --porcelain\"}\n```\n"
     calls = parse_tool_calls(text)
     assert len(calls) == 1
@@ -27,6 +37,11 @@ def test_parse_tool_calls_detects_bash_call():
 
 
 def test_parse_tool_calls_detects_self_closing_write_tag():
+    """中文说明：
+    - 含义：验证 `parse_tool_calls` 能识别自闭合 `<write ... />` 写文件标签。
+    - 内容：输入 `<write filePath=... content=... />`，断言解析出 kind=file 且内容正确解码。
+    - 可简略：可能（主要覆盖标签语法的兼容性）。
+    """
     text = '<write filePath=\"hello.txt\" content=\"hello\\n\" />'
     calls = parse_tool_calls(text)
     assert len(calls) == 1
@@ -38,6 +53,11 @@ def test_parse_tool_calls_detects_self_closing_write_tag():
 
 
 def test_tool_policy_plan_update_only_allows_plan_md(tmp_path: Path):
+    """中文说明：
+    - 含义：验证 plan_update_attempt_1 场景下 ToolPolicy 仅允许写 PLAN.md。
+    - 内容：构造 policy 并分别尝试写 PLAN.md 与其它文件，断言允许/拒绝与 reason 符合预期。
+    - 可简略：否（属于安全边界测试；建议保留以防回归）。
+    """
     repo = tmp_path.resolve()
     plan = repo / "PLAN.md"
     pipeline = repo / "pipeline.yml"
@@ -60,6 +80,11 @@ def test_tool_policy_plan_update_only_allows_plan_md(tmp_path: Path):
 
 
 def test_tool_policy_execute_step_denies_plan_and_pipeline(tmp_path: Path):
+    """中文说明：
+    - 含义：验证 execute_step 场景禁止写 PLAN.md 与 pipeline.yml，但允许写普通代码文件。
+    - 内容：分别对 plan/pipeline/src 文件调用 `allow_file_write`，断言拒绝原因与允许结果正确。
+    - 可简略：否（是执行阶段的关键保护，避免 agent 越权改契约/计划）。
+    """
     repo = tmp_path.resolve()
     plan = repo / "PLAN.md"
     pipeline = repo / "pipeline.yml"
@@ -84,6 +109,11 @@ def test_tool_policy_execute_step_denies_plan_and_pipeline(tmp_path: Path):
 
 
 def test_tool_policy_scaffold_contract_allows_only_pipeline_and_aider_fsm(tmp_path: Path):
+    """中文说明：
+    - 含义：验证 scaffold_contract 场景只允许写 pipeline.yml 与 `.aider_fsm/*`。
+    - 内容：policy.allow_file_write 对 pipeline/bootstrap.yml 放行，对 src/app.py 拒绝并返回原因。
+    - 可简略：否（是 scaffold 合同的关键边界；建议保留）。
+    """
     repo = tmp_path.resolve()
     plan = repo / "PLAN.md"
     pipeline = repo / "pipeline.yml"
@@ -109,6 +139,11 @@ def test_tool_policy_scaffold_contract_allows_only_pipeline_and_aider_fsm(tmp_pa
 
 
 def test_tool_policy_restricted_bash_blocks_shell_metacharacters(tmp_path: Path):
+    """中文说明：
+    - 含义：验证 restricted bash 模式会拦截包含重定向等 shell 元字符的命令。
+    - 内容：调用 `allow_bash('echo \"hi\" > hello.txt')`，期望返回 not ok 且 reason 属于预期集合。
+    - 可简略：否（属于安全防线测试；建议保留以防策略回退）。
+    """
     repo = tmp_path.resolve()
     policy = ToolPolicy(
         repo=repo,

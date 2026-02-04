@@ -134,10 +134,6 @@
 | `docs/metrics_schema.md` | Docs | 是 | Low | 运行不依赖 | 同上 |
 | `docs/security_model.md` | Docs | 是 | Low | 运行不依赖 | 同上 |
 
-已删除的 legacy 文档（不再存在于 repo 中）：
-
-- `docs/legacy_proposal.md`：Aider 时代 proposal（与当前 OpenCode runner 不一致）
-
 ### 4.4 `examples/`（模板）
 
 | Path | 角色 | 可省略? | 风险 | 理由 / 影响 | 建议动作 |

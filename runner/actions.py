@@ -12,6 +12,11 @@ from .types import CmdResult, StageResult
 
 
 def load_actions_spec(path: Path) -> dict[str, Any]:
+    """中文说明：
+    - 含义：解析 `.aider_fsm/actions.yml` 的 YAML 规范并做基础校验。
+    - 内容：要求 `version: 1`；`actions` 必须是 list[dict]；返回结构包含 parsed actions 与原始 raw（用于 artifacts 记录）。
+    - 可简略：可能（薄封装；但集中校验能减少运行期错误并便于测试）。
+    """
     try:
         import yaml  # type: ignore
     except Exception as e:  # pragma: no cover
@@ -43,6 +48,11 @@ def run_pending_actions(
     artifacts_dir: Path,
     protected_paths: list[Path] | None = None,
 ) -> StageResult | None:
+    """中文说明：
+    - 含义：执行目标 repo 中“待处理”的 actions 文件（通常由模型在失败时生成）。
+    - 内容：读取并逐条执行 actions（run_cmd/write_file 等），遵守安全策略与 strict 模式；写入 artifacts；最后尽力删除 actions.yml 以避免重复执行。
+    - 可简略：否（这是“环境/工具修复”的关键机制；简化会显著降低自治修复能力）。
+    """
     if not actions_path.exists():
         return None
 

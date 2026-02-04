@@ -21,6 +21,11 @@ _HF_HOSTS = {"huggingface.co", "www.huggingface.co"}
 
 
 def is_probably_repo_url(repo: str) -> bool:
+    """中文说明：
+    - 含义：判断字符串是否“看起来像”一个可获取的远程 repo（URL/SSH/owner/repo）。
+    - 内容：用于区分本地路径 vs 远程地址；匹配 http(s)/ssh/git@、以 .git 结尾的形式、以及 `owner/repo` 简写。
+    - 可简略：可能（启发式；但集中实现便于统一行为）。
+    """
     s = str(repo or "").strip()
     if not s:
         return False
@@ -35,6 +40,10 @@ def is_probably_repo_url(repo: str) -> bool:
 
 def normalize_repo_url(repo: str) -> str:
     """Normalize shorthand forms into a git-cloneable URL."""
+    # 中文说明：
+    # - 含义：把 `owner/repo` 这种简写规范化为可 git clone 的 URL。
+    # - 内容：目前默认映射到 GitHub HTTPS：`https://github.com/{owner/repo}.git`；其余输入保持不变。
+    # - 可简略：可能（如果不想默认 GitHub，可移除此简写规则）。
     s = str(repo or "").strip()
     if _OWNER_REPO_RE.match(s):
         # Default to GitHub for shorthand `owner/repo`.
@@ -43,6 +52,11 @@ def normalize_repo_url(repo: str) -> str:
 
 
 def _repo_slug(repo_url: str) -> str:
+    """中文说明：
+    - 含义：从 repo URL 生成一个适合作为本地目录名的 slug。
+    - 内容：提取 owner/repo（尽力），替换非法字符为 `_`，并限制长度；用于 `/tmp/aider_fsm_targets/<slug>_<ts>`。
+    - 可简略：可能（命名策略可调整；但需要保持稳定与避免路径注入）。
+    """
     s = repo_url.strip().rstrip("/")
     if s.startswith("git@") and ":" in s:
         s = s.split(":", 1)[1]
@@ -58,6 +72,11 @@ def _repo_slug(repo_url: str) -> str:
 
 
 def _parse_github_owner_repo(url: str) -> tuple[str, str] | None:
+    """中文说明：
+    - 含义：从 GitHub URL/SSH 地址解析出 (owner, repo)。
+    - 内容：支持 https://github.com/owner/repo(.git)、git@github.com:owner/repo(.git)、ssh://git@github.com/owner/repo(.git)。
+    - 可简略：可能（只为 GitHub ZIP fallback 服务；若去掉 fallback 可删除）。
+    """
     s = str(url or "").strip()
     if not s:
         return None
@@ -94,6 +113,11 @@ def _download_file(
     headers: dict[str, str] | None = None,
     max_bytes: int | None = None,
 ) -> tuple[bool, str]:
+    """中文说明：
+    - 含义：下载一个 URL 到本地文件（带超时/可选 header/可选大小上限）。
+    - 内容：流式读取并写入；若超过 max_bytes 则中止；返回 (ok, err_str) 而不是抛错，便于上层聚合错误信息。
+    - 可简略：否（repo 获取与 HF 下载都依赖；需要稳定的错误语义与限速/限量能力）。
+    """
     try:
         h = {
             "User-Agent": "opencode-fsm/1.0",
@@ -128,6 +152,11 @@ def _download_file(
 
 
 def _extract_github_zip(zip_path: Path, *, extract_dir: Path, repo_name: str) -> Path:
+    """中文说明：
+    - 含义：解压 GitHub archive zip，并返回解压出的 repo 根目录路径。
+    - 内容：兼容 `repo-main/`、`repo-master/` 等目录结构；若结构不符合预期则抛错。
+    - 可简略：是（仅 GitHub ZIP fallback 需要；若去掉 fallback 可删除）。
+    """
     extract_dir.mkdir(parents=True, exist_ok=True)
     try:
         with zipfile.ZipFile(zip_path, "r") as zf:
@@ -148,6 +177,11 @@ def _extract_github_zip(zip_path: Path, *, extract_dir: Path, repo_name: str) ->
 
 
 def _parse_hf_dataset(url: str) -> tuple[str, str] | None:
+    """中文说明：
+    - 含义：识别 Hugging Face dataset URL，并解析出 (namespace, name)。
+    - 内容：匹配 `https://huggingface.co/datasets/<namespace>/<name>` 路径；用于触发“HF 快照下载”逻辑。
+    - 可简略：是（只在需要支持 HF dataset URL 时才需要）。
+    """
     u = str(url or "").strip()
     if not u.startswith(("http://", "https://")):
         return None
@@ -173,6 +207,11 @@ def _hf_dataset_api_info(
     token: str | None,
     timeout_seconds: int = 20,
 ) -> dict[str, object]:
+    """中文说明：
+    - 含义：调用 Hugging Face datasets API 获取数据集元信息（sha/siblings/private/gated 等）。
+    - 内容：请求 `https://huggingface.co/api/datasets/{namespace}/{name}`；若提供 token 则加 Bearer；返回解析后的 dict。
+    - 可简略：是（只在 HF dataset 支持场景需要）。
+    """
     url = f"https://huggingface.co/api/datasets/{namespace}/{name}"
     headers: dict[str, str] = {"Accept": "application/json", "User-Agent": "opencode-fsm/1.0"}
     if token:
@@ -193,7 +232,16 @@ def _download_hf_dataset_snapshot(
     dest: Path,
     env: dict[str, str],
 ) -> tuple[bool, str]:
-    """Download a Hugging Face dataset snapshot via the HF REST API (no git required)."""
+    """中文说明：
+    - 含义：通过 HF REST API 下载 dataset 的一个“快照副本”（无需 git）。
+    - 内容：读取 dataset API 的 siblings 列表并逐文件下载到 `dest/`；写入 `data/hf_manifest.json`；并 best-effort 初始化 git（用于后续 revert guards）。
+    - 可简略：是（可选能力；若你只处理 git repo，可移除整个 HF 分支）。
+
+    ---
+
+    English (original intent):
+    Download a Hugging Face dataset snapshot via the HF REST API (no git required).
+    """
     if dest.exists():
         shutil.rmtree(dest, ignore_errors=True)
     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -315,6 +363,10 @@ def _archive_clone_github(
 
     Returns (ok, detail). On success, the repo is extracted into dest.
     """
+    # 中文说明：
+    # - 含义：当 `git clone` 失败时，尝试通过 GitHub 的 archive zip 下载并解压作为 fallback。
+    # - 内容：尝试 main/master 分支 zip；成功后初始化本地 git（用于 revert guards）。
+    # - 可简略：是（增强鲁棒性；若运行环境保证 git clone 可用，可移除）。
     if dest.exists():
         shutil.rmtree(dest, ignore_errors=True)
     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -368,15 +420,24 @@ def _archive_clone_github(
 
 @dataclass(frozen=True)
 class PreparedRepo:
+    """中文说明：
+    - 含义：`prepare_repo` 的返回结构：一个可用的本地 repo 路径，以及可选的来源 URL。
+    - 内容：当输入是远程 URL 时 cloned_from 会记录来源；当输入是本地路径时为 None。
+    - 可简略：可能（字段很少；但作为清晰返回类型更利于测试/日志）。
+    """
+
     repo: Path
     cloned_from: str | None = None
 
 
 def prepare_repo(repo_arg: str, *, clones_dir: Path | None = None) -> PreparedRepo:
-    """Return a usable local repo path.
-
-    - If repo_arg is an existing local path -> use it.
-    - If repo_arg looks like a git URL -> clone to clones_dir (or /tmp).
+    """中文说明：
+    - 含义：把用户输入的 `--repo` 参数解析成可用的本地目录。
+    - 内容：
+      - 若是已存在的本地路径：直接返回
+      - 若是远程 git URL/owner/repo：clone 到临时目录（失败时可走 GitHub zip fallback）
+      - 若是 HF dataset URL：走 HF API 下载快照
+    - 可简略：否（runner 对“只给 URL”场景的核心入口；简化会大幅降低适配范围）。
     """
     raw = str(repo_arg or "").strip()
     if not raw:

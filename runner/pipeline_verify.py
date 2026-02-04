@@ -23,6 +23,11 @@ from .types import CmdResult, StageResult, VerificationResult
 
 
 def stage_rc(stage: StageResult | None) -> int | None:
+    """中文说明：
+    - 含义：提取某个 stage 的“代表性返回码”（用于 summary/state）。
+    - 内容：优先取 failed_index 对应命令的 rc；否则取最后一次执行的 rc；若无结果则返回 None。
+    - 可简略：可能（纯辅助函数；但集中实现避免边界处理分散）。
+    """
     if stage is None or not stage.results:
         return None
     if stage.failed_index is None:
@@ -33,6 +38,11 @@ def stage_rc(stage: StageResult | None) -> int | None:
 
 
 def stage_failed_cmd(stage: StageResult | None) -> CmdResult | None:
+    """中文说明：
+    - 含义：获取某个 stage 的“失败命令”或“最后命令”的 CmdResult。
+    - 内容：如果 failed_index 存在则返回对应结果；否则返回最后一次结果；用于展示错误尾部与生成修复 prompt。
+    - 可简略：可能（小工具；但使得错误输出逻辑统一）。
+    """
     if stage is None or not stage.results:
         return None
     if stage.failed_index is not None and 0 <= stage.failed_index < len(stage.results):
@@ -41,6 +51,11 @@ def stage_failed_cmd(stage: StageResult | None) -> CmdResult | None:
 
 
 def _read_json(path: Path) -> tuple[dict[str, Any] | None, str | None]:
+    """中文说明：
+    - 含义：读取并解析 metrics JSON 文件。
+    - 内容：要求是 JSON object（dict）；失败时返回 (None, 错误原因字符串)。
+    - 可简略：可能（内部 helper；但把错误信息标准化很有用）。
+    """
     try:
         raw = path.read_text(encoding="utf-8", errors="replace")
     except Exception as e:
@@ -55,6 +70,11 @@ def _read_json(path: Path) -> tuple[dict[str, Any] | None, str | None]:
 
 
 def _validate_metrics(metrics: dict[str, Any], required_keys: list[str]) -> list[str]:
+    """中文说明：
+    - 含义：校验 metrics dict 是否包含 required_keys。
+    - 内容：返回缺失 key 列表；为空表示通过。
+    - 可简略：可能（非常小的 helper；但逻辑集中更清晰）。
+    """
     missing: list[str] = []
     for k in required_keys:
         if k not in metrics:
@@ -70,6 +90,11 @@ def _dump_kubectl(
     label_selector: str | None,
     include_logs: bool,
 ) -> None:
+    """中文说明：
+    - 含义：在 deploy 阶段结束后导出 k8s 调试信息（可选）。
+    - 内容：执行一组 `kubectl get ...` 并写入 artifacts；可按 label_selector 导出相关 pod 的日志（tail=2000）。
+    - 可简略：是（纯增强诊断能力；不影响核心闭环）。
+    """
     out_dir.mkdir(parents=True, exist_ok=True)
     cmds: list[tuple[str, str]] = [
         ("kubectl_get_nodes", "kubectl get nodes -o wide"),
@@ -111,6 +136,11 @@ def _run_stage(
     pipeline: PipelineSpec | None,
     artifacts_dir: Path,
 ) -> StageResult:
+    """中文说明：
+    - 含义：执行某个 stage 的一组命令，并把每次尝试的输出写入 artifacts。
+    - 内容：为每个命令支持 retries；应用安全策略（cmd_allowed/looks_interactive）；应用 per-cmd 与 per-stage 总超时；落盘 `<stage>_cmdXX_tryYY_*` 与 `<stage>_summary.json`。
+    - 可简略：否（这是 pipeline 执行器的核心；与审计/安全/重试/超时强绑定）。
+    """
     stage = stage.strip() or "stage"
     env2 = dict(env)
     env2["AIDER_FSM_STAGE"] = stage
@@ -204,6 +234,14 @@ def run_pipeline_verification(
     artifacts_dir: Path,
     unattended: str = "strict",
 ) -> VerificationResult:
+    """中文说明：
+    - 含义：按 pipeline 合同执行一次完整的验收（verification）。
+    - 内容：
+      - 顺序：auth(可选) → tests → deploy.setup(可选) → deploy.health(可选) → rollout(可选) → evaluation(可选) → benchmark(可选)
+      - metrics：若配置了 evaluation/benchmark 的 metrics_path + required_keys，则读取并校验 JSON object 的 key 是否齐全
+      - artifacts：为每个 stage 写入 cmd/stdout/stderr/result/summary，并在需要时执行 deploy_teardown 与 kubectl dump
+    - 可简略：否（runner 的“验收契约”核心入口；删改会影响行为与兼容性）。
+    """
     artifacts_dir.mkdir(parents=True, exist_ok=True)
     ok = False
     failed_stage: str | None = None
@@ -223,6 +261,11 @@ def run_pipeline_verification(
     kubectl_dump_enabled = bool(pipeline and pipeline.kubectl_dump_enabled)
 
     def _teardown_allowed(success: bool) -> bool:
+        """中文说明：
+        - 含义：根据 teardown_policy 判断是否允许执行 deploy teardown。
+        - 内容：综合 teardown_cmds 是否为空以及 `always/on_success/on_failure/never` 策略做布尔判断。
+        - 可简略：是（纯 helper；可内联到调用点）。
+        """
         if not teardown_cmds:
             return False
         if teardown_policy == "never":
@@ -238,6 +281,11 @@ def run_pipeline_verification(
     env_base = dict(os.environ)
 
     def _workdir_or_fail(stage: str, raw: str | None) -> tuple[Path, StageResult | None]:
+        """中文说明：
+        - 含义：解析某个 stage 的 workdir；失败时返回可序列化的 StageResult 错误。
+        - 内容：用 `resolve_workdir` 计算实际路径；异常时写 artifacts，并返回 (repo, failed_stage_result)。
+        - 可简略：可能（抽出 helper 能统一错误格式与落盘；也可拆成 try/except 重复代码）。
+        """
         try:
             return resolve_workdir(repo, raw), None
         except Exception as e:
@@ -715,6 +763,11 @@ def run_pipeline_verification(
 
 
 def fmt_stage_tail(prefix: str, stage: StageResult | None) -> str:
+    """中文说明：
+    - 含义：将某个 stage 的“失败/最后一次命令”的 stdout/stderr 尾部格式化为 prompt 片段。
+    - 内容：输出 `[PREFIX_RC] / [PREFIX_STDOUT_TAIL] / [PREFIX_STDERR_TAIL]` 三段，长度受 `STDIO_TAIL_CHARS` 限制。
+    - 可简略：可能（只用于构建提示词；但集中格式化便于一致性与测试）。
+    """
     res = stage_failed_cmd(stage)
     if res is None:
         return ""

@@ -9,11 +9,21 @@ from runner.pipeline_verify import run_pipeline_verification
 
 
 def _py_cmd(exit_code: int) -> str:
+    """中文说明：
+    - 含义：构造一个会以指定 exit code 退出的 Python 命令（`python -c ...`）。
+    - 内容：用于在 tests_cmds / rollout/evaluation/benchmark cmd 中制造可控的成功/失败。
+    - 可简略：是（测试 helper；可直接内联拼接）。
+    """
     py = shlex.quote(sys.executable)
     return f'{py} -c "import sys; sys.exit({exit_code})"'
 
 
 def test_load_pipeline_spec_ok(tmp_path: Path):
+    """中文说明：
+    - 含义：验证 `load_pipeline_spec` 能解析较完整的 v1 pipeline.yml。
+    - 内容：写入覆盖 security/tests/auth/deploy/rollout/evaluation/benchmark/artifacts/tooling 的 YAML，并断言关键字段映射正确。
+    - 可简略：可能（可拆成更细粒度的 schema 单测；但当前是高覆盖回归测试）。
+    """
     p = tmp_path / "pipeline.yml"
     p.write_text(
         "\n".join(
@@ -102,6 +112,11 @@ def test_load_pipeline_spec_ok(tmp_path: Path):
 
 
 def test_load_pipeline_spec_invalid_version(tmp_path: Path):
+    """中文说明：
+    - 含义：验证 pipeline.yml 的 version 不支持时会报错。
+    - 内容：写入 version=2 并断言抛出 ValueError。
+    - 可简略：是（典型负例测试）。
+    """
     p = tmp_path / "pipeline.yml"
     p.write_text("version: 2\n", encoding="utf-8")
     with pytest.raises(ValueError):
@@ -109,6 +124,11 @@ def test_load_pipeline_spec_invalid_version(tmp_path: Path):
 
 
 def test_run_pipeline_verification_metrics_ok(tmp_path: Path):
+    """中文说明：
+    - 含义：验证 benchmark metrics 的读取与 required_keys 校验通过时验收成功。
+    - 内容：预写 metrics.json（含 score），构造 PipelineSpec 的 benchmark 配置并运行 verification，断言 ok 与 metrics 正确。
+    - 可简略：否（metrics 契约是 benchmark/evaluation 的核心；建议保留覆盖）。
+    """
     (tmp_path / "metrics.json").write_text('{"score": 1}\n', encoding="utf-8")
     pipeline = PipelineSpec(
         benchmark_run_cmds=[_py_cmd(0)],
@@ -128,6 +148,11 @@ def test_run_pipeline_verification_metrics_ok(tmp_path: Path):
 
 
 def test_run_pipeline_verification_evaluation_metrics_ok(tmp_path: Path):
+    """中文说明：
+    - 含义：验证 evaluation metrics 的读取与 required_keys 校验通过时验收成功。
+    - 内容：预写 metrics.json（含 score），构造 PipelineSpec 的 evaluation 配置并运行 verification，断言 evaluation stage ok 且 metrics 正确。
+    - 可简略：否（evaluation 的 metrics 契约属于关键路径覆盖）。
+    """
     (tmp_path / "metrics.json").write_text('{"score": 1}\n', encoding="utf-8")
     pipeline = PipelineSpec(
         evaluation_run_cmds=[_py_cmd(0)],
@@ -149,6 +174,11 @@ def test_run_pipeline_verification_evaluation_metrics_ok(tmp_path: Path):
 
 
 def test_run_pipeline_verification_metrics_missing_key(tmp_path: Path):
+    """中文说明：
+    - 含义：验证 benchmark metrics 缺少 required_keys 时会失败并给出错误原因。
+    - 内容：metrics.json 写 `{}`，required_keys=[score]，断言 failed_stage=metrics 且 errors 包含 missing_keys。
+    - 可简略：否（关键负例覆盖，防止 silently pass）。
+    """
     (tmp_path / "metrics.json").write_text("{}\n", encoding="utf-8")
     pipeline = PipelineSpec(
         benchmark_run_cmds=[_py_cmd(0)],
@@ -167,6 +197,11 @@ def test_run_pipeline_verification_metrics_missing_key(tmp_path: Path):
 
 
 def test_run_pipeline_verification_evaluation_metrics_missing_key(tmp_path: Path):
+    """中文说明：
+    - 含义：验证 evaluation metrics 缺少 required_keys 时会失败并给出错误原因。
+    - 内容：metrics.json 写 `{}`，evaluation_required_keys=[score]，断言 failed_stage=metrics 且 errors 包含 missing_keys。
+    - 可简略：否（关键负例覆盖）。
+    """
     (tmp_path / "metrics.json").write_text("{}\n", encoding="utf-8")
     pipeline = PipelineSpec(
         evaluation_run_cmds=[_py_cmd(0)],
@@ -185,6 +220,11 @@ def test_run_pipeline_verification_evaluation_metrics_missing_key(tmp_path: Path
 
 
 def test_run_pipeline_verification_safe_mode_blocks_sudo(tmp_path: Path):
+    """中文说明：
+    - 含义：验证 safe security mode 会拦截 `sudo` 等危险命令。
+    - 内容：tests_cmds 传入 `sudo echo hi`，断言 tests stage 失败且 rc=126（被策略拒绝）。
+    - 可简略：否（安全边界测试，建议保留）。
+    """
     pipeline = PipelineSpec(security_mode="safe")
     verify = run_pipeline_verification(
         tmp_path,
@@ -200,6 +240,11 @@ def test_run_pipeline_verification_safe_mode_blocks_sudo(tmp_path: Path):
 
 
 def test_run_pipeline_verification_rollout_runs(tmp_path: Path):
+    """中文说明：
+    - 含义：验证 rollout stage 在配置存在时会被执行（并影响 overall ok）。
+    - 内容：构造包含 rollout_run_cmds 与 benchmark_run_cmds 的 PipelineSpec，运行 verification 并断言 rollout.ok 为 True。
+    - 可简略：可能（可补充更多 rollout/eval/bench 组合；当前覆盖“rollout 触发”主路径）。
+    """
     pipeline = PipelineSpec(
         rollout_run_cmds=[_py_cmd(0)],
         benchmark_run_cmds=[_py_cmd(0)],

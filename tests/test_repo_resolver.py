@@ -26,31 +26,73 @@ from runner.repo_resolver import is_probably_repo_url, prepare_repo
     ],
 )
 def test_is_probably_repo_url(s: str, ok: bool):
+    """中文说明：
+    - 含义：验证 `is_probably_repo_url` 对常见 git/GitHub 形式与明显非 repo 字符串的判定。
+    - 内容：使用参数化样例覆盖 https/ssh/scp-like/owner-repo 简写等，并断言返回值与期望一致。
+    - 可简略：可能（可增加更多样例；但当前已覆盖主分支）。
+    """
     assert is_probably_repo_url(s) is ok
 
 
 @dataclass(frozen=True)
 class _FakeCompletedProcess:
+    """中文说明：
+    - 含义：测试用的 `subprocess.CompletedProcess` 替身（只提供本测试需要的字段）。
+    - 内容：包含 returncode/stdout/stderr，用于 monkeypatch `subprocess.run` 的返回值。
+    - 可简略：是（也可直接返回简单对象或 namedtuple）。
+    """
+
     returncode: int
     stdout: str = ""
     stderr: str = ""
 
 
 class _FakeHTTPResponse:
+    """中文说明：
+    - 含义：测试用的 HTTP 响应对象（模拟 urlopen 返回值）。
+    - 内容：用 BytesIO 持有数据，实现 `read` 以及上下文管理协议（with）。
+    - 可简略：是（最小替身；也可用更完整的 mock）。
+    """
+
     def __init__(self, data: bytes):
+        """中文说明：
+        - 含义：用给定 bytes 初始化一个可读的响应体。
+        - 内容：将 data 包装到 BytesIO，供 `read()` 消费。
+        - 可简略：是（测试样板）。
+        """
         self._bio = io.BytesIO(data)
 
     def read(self, n: int = -1) -> bytes:
+        """中文说明：
+        - 含义：读取响应体字节。
+        - 内容：透传到内部 BytesIO.read；n=-1 表示读完。
+        - 可简略：是（测试样板）。
+        """
         return self._bio.read(n)
 
     def __enter__(self):
+        """中文说明：
+        - 含义：支持 `with urlopen(...) as resp:` 语法。
+        - 内容：返回 self。
+        - 可简略：是（测试样板）。
+        """
         return self
 
     def __exit__(self, exc_type, exc, tb):
+        """中文说明：
+        - 含义：上下文管理退出钩子。
+        - 内容：返回 False 表示不吞异常。
+        - 可简略：是（测试样板）。
+        """
         return False
 
 
 def _make_zip_bytes(root_dir: str, files: dict[str, str]) -> bytes:
+    """中文说明：
+    - 含义：构造一个内存中的 zip 包（用于模拟 GitHub archive 下载）。
+    - 内容：以 `root_dir/relpath` 的形式写入多个文件内容并返回 zip 的 bytes。
+    - 可简略：可能（可以用固定 zip fixture；但动态生成更灵活）。
+    """
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as zf:
         for rel, content in files.items():
@@ -59,16 +101,31 @@ def _make_zip_bytes(root_dir: str, files: dict[str, str]) -> bytes:
 
 
 def test_prepare_repo_github_archive_fallback_on_git_clone_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """中文说明：
+    - 含义：验证 `prepare_repo` 在 `git clone` 失败时会退回 GitHub archive zip 下载。
+    - 内容：fake_run 让 git clone 失败；fake_urlopen 返回 main.zip；断言最终 repo 中 README 内容正确且 cloned_from 被记录。
+    - 可简略：否（是“只给 URL 也能拉取”的关键保障路径之一；建议保留）。
+    """
     url = "https://github.com/foo/bar.git"
     zip_bytes = _make_zip_bytes("bar-main", {"README.md": "hello\n"})
 
     def fake_run(cmd, *args, **kwargs):
+        """中文说明：
+        - 含义：替换 `subprocess.run` 的测试桩。
+        - 内容：仅对 `git clone` 返回失败，其它命令返回成功，触发 archive fallback 分支。
+        - 可简略：是（测试桩；可用 mock 框架替代）。
+        """
         # Fail `git clone`, succeed everything else.
         if isinstance(cmd, list) and len(cmd) >= 2 and cmd[0] == "git" and cmd[1] == "clone":
             return _FakeCompletedProcess(returncode=1, stdout="", stderr="blocked")
         return _FakeCompletedProcess(returncode=0, stdout="", stderr="")
 
     def fake_urlopen(req, *args, **kwargs):
+        """中文说明：
+        - 含义：替换 `urlopen` 的测试桩（只处理 archive zip 下载）。
+        - 内容：断言请求目标是 `/archive/refs/heads/main.zip`，并返回包含 README 的 zip。
+        - 可简略：是（测试桩；可用更通用的 stub 服务器替代）。
+        """
         target = str(getattr(req, "full_url", req))
         assert target.endswith("/archive/refs/heads/main.zip")
         return _FakeHTTPResponse(zip_bytes)
@@ -82,6 +139,11 @@ def test_prepare_repo_github_archive_fallback_on_git_clone_failure(tmp_path: Pat
 
 
 def test_prepare_repo_hf_dataset_download(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """中文说明：
+    - 含义：验证 `prepare_repo` 能把 HuggingFace dataset URL 拉取为本地可用的 repo 目录。
+    - 内容：fake_urlopen 模拟 HF API 返回 siblings 清单 + 文件下载；fake_run 让 git init/add/commit 成功；断言文件与 manifest 落盘。
+    - 可简略：否（是“只给 URL”能力的另一关键分支：HF dataset）。
+    """
     url = "https://huggingface.co/datasets/example/dataset"
     api_json = {
         "id": "example/dataset",
@@ -99,10 +161,20 @@ def test_prepare_repo_hf_dataset_download(tmp_path: Path, monkeypatch: pytest.Mo
     }
 
     def fake_run(cmd, *args, **kwargs):
+        """中文说明：
+        - 含义：替换 `subprocess.run` 的测试桩（HF dataset 分支）。
+        - 内容：假装所有命令都成功（git init/add/commit best-effort），以便测试聚焦在下载逻辑。
+        - 可简略：是（测试桩）。
+        """
         # Always succeed (git init/add/commit best-effort).
         return _FakeCompletedProcess(returncode=0, stdout="", stderr="")
 
     def fake_urlopen(req, *args, **kwargs):
+        """中文说明：
+        - 含义：替换 `urlopen` 的测试桩，模拟 HF dataset API 与文件下载端点。
+        - 内容：对 `/api/datasets/...` 返回 JSON；对 `/resolve/<sha>/...` 返回对应文件 bytes；其它 url 直接断言失败。
+        - 可简略：可能（逻辑稍多；可抽象成路由表以减少 if/else）。
+        """
         target = str(getattr(req, "full_url", req))
         if target == "https://huggingface.co/api/datasets/example/dataset":
             return _FakeHTTPResponse(json.dumps(api_json).encode("utf-8"))

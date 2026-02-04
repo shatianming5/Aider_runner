@@ -9,8 +9,15 @@ from .subprocess_utils import read_text_if_exists
 
 @dataclass(frozen=True)
 class PipelineSpec:
-    """Declarative contract for verification stages.
+    """中文说明：
+    - 含义：`pipeline.yml`（v1）的解析后结构：声明式验收合同（tests/deploy/rollout/evaluation/benchmark/metrics 等）。
+    - 内容：保存各 stage 的命令、超时、重试、env/workdir、安全策略与 artifacts 输出目录；runner 会按既定顺序执行并记录结果。
+    - 可简略：否（这是项目最核心的“契约层”；字段变化会影响兼容性与安全边界）。
 
+    ---
+
+    English (original intent):
+    Declarative contract for verification stages.
     NOTE: The runner intentionally treats this file as *human-owned* and will revert
     any model edits during plan-update/execute steps.
     """
@@ -89,6 +96,11 @@ class PipelineSpec:
     security_max_total_seconds: int | None = None
 
     def __post_init__(self) -> None:
+        """中文说明：
+        - 含义：把所有 list/dict 字段从 None 归一化为 `[]/{}`。
+        - 内容：避免调用点写大量 `or []` / `or {}`；同时保持 dataclass frozen 的不变性。
+        - 可简略：否（统一空值语义，减少 bug）。
+        """
         for attr in (
             "tests_cmds",
             "deploy_setup_cmds",
@@ -111,6 +123,11 @@ class PipelineSpec:
 
 
 def load_pipeline_spec(path: Path) -> PipelineSpec:
+    """中文说明：
+    - 含义：从 `pipeline.yml` 读取并解析 PipelineSpec（v1）。
+    - 内容：使用 PyYAML 加载顶层 mapping；校验 version=1；把各 stage 的 cmd/cmds、env、workdir、metrics_path/required_keys、安全策略等字段解析为强类型对象。
+    - 可简略：否（契约解析与校验决定 runner 能否安全、确定性地执行）。
+    """
     try:
         import yaml  # type: ignore
     except Exception as e:  # pragma: no cover
@@ -128,6 +145,11 @@ def load_pipeline_spec(path: Path) -> PipelineSpec:
         raise ValueError(f"unsupported pipeline version: {version}")
 
     def _as_mapping(value: Any, name: str) -> dict[str, Any]:
+        """中文说明：
+        - 含义：把 YAML 字段规整为 dict（mapping），便于后续强类型解析。
+        - 内容：允许 None → `{}`；否则要求是 dict，否则抛出带路径的 ValueError。
+        - 可简略：是（小工具函数；也可用重复的 if/raise 替代）。
+        """
         if value is None:
             return {}
         if not isinstance(value, dict):
@@ -135,6 +157,11 @@ def load_pipeline_spec(path: Path) -> PipelineSpec:
         return value
 
     def _as_env(value: Any, name: str) -> dict[str, str]:
+        """中文说明：
+        - 含义：把某个 `*.env` 字段解析为 `dict[str, str]`。
+        - 内容：过滤空 key；把值统一转成字符串（None → `\"\"`）；类型不符时报错。
+        - 可简略：可能（重复较多，但集中处理能保证一致性与可测试性）。
+        """
         if value is None:
             return {}
         if not isinstance(value, dict):
@@ -150,6 +177,11 @@ def load_pipeline_spec(path: Path) -> PipelineSpec:
         return out
 
     def _as_cmds(m: dict[str, Any], *, cmd_key: str, cmds_key: str) -> list[str]:
+        """中文说明：
+        - 含义：把 `cmd`/`cmds` 两种写法统一成 `list[str]`。
+        - 内容：优先读取 `cmds_key`（要求 list[str]）；否则读取 `cmd_key`（要求非空 str）；都缺失则返回空列表。
+        - 可简略：是（本质是兼容层；若未来只保留一种字段，可删除）。
+        """
         if cmds_key in m and m.get(cmds_key) is not None:
             v = m.get(cmds_key)
             if not isinstance(v, list) or not all(isinstance(x, str) and x.strip() for x in v):

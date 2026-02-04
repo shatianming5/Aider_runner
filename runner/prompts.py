@@ -9,6 +9,11 @@ from .types import VerificationResult
 
 
 def make_plan_update_prompt(snapshot_text: str, test_cmd: str, *, extra: str = "") -> str:
+    """中文说明：
+    - 含义：生成“只允许编辑 PLAN.md”的 plan-update 提示词。
+    - 内容：描述 tool-call 协议、硬约束（只能改 PLAN.md、Next 必须只有一个未完成项、Acceptance 必须包含 TEST_CMD 等），并把 snapshot 作为事实输入注入。
+    - 可简略：否（提示词是安全边界的一部分；简化可能导致越权修改或不可解析计划）。
+    """
     extra = extra.strip()
     extra_block = f"\n[EXTRA]\n{extra}\n" if extra else ""
     return (
@@ -53,6 +58,11 @@ def make_plan_update_prompt(snapshot_text: str, test_cmd: str, *, extra: str = "
 
 
 def make_execute_prompt(snapshot_text: str, step: dict[str, str]) -> str:
+    """中文说明：
+    - 含义：生成“只执行 Next 这一步”的 execute 提示词。
+    - 内容：要求 agent 不做额外 refactor、不改 PLAN/pipeline；允许通过 tool-call 读写文件/跑命令来完成单一实现任务。
+    - 可简略：否（提示词强约束用于避免范围蔓延与越权修改）。
+    """
     return (
         "You are a strict executor. Your job: implement ONLY the single `Next` step.\n"
         "\n"
@@ -87,6 +97,11 @@ def make_execute_prompt(snapshot_text: str, step: dict[str, str]) -> str:
 
 
 def make_scaffold_contract_prompt(repo: Path, *, pipeline_rel: str, require_metrics: bool) -> str:
+    """中文说明：
+    - 含义：生成“合同 scaffolder”的提示词，用于在目标 repo 缺失 pipeline.yml 时自动补齐契约。
+    - 内容：强制要求 pipeline v1 schema；只允许写 `pipeline.yml` 与 `.aider_fsm/**`；要求 evaluation 至少能写出 metrics.json（含 score）；并提供 discovery checklist 以减少凭空猜测。
+    - 可简略：否（这是“只给 URL 也能跑通”的关键能力与安全边界）。
+    """
     required_keys = ["score"] if require_metrics else []
     required_line = ""
     if required_keys:
@@ -210,6 +225,11 @@ def make_fix_or_replan_prompt(
     tests_cmds: list[str],
     artifacts_dir: Path,
 ) -> str:
+    """中文说明：
+    - 含义：生成“验收失败后的修复或改计划（二选一）”提示词。
+    - 内容：注入失败 stage、tests_cmd、artifacts_dir 与 stdout/stderr tail；允许 agent 选择修复或仅编辑 PLAN.md 标记 Blocked/拆分。
+    - 可简略：否（失败闭环的关键提示词；缺少上下文会降低修复成功率）。
+    """
     metrics_errors = verify.metrics_errors or []
     metrics_block = ""
     if verify.metrics_path or metrics_errors:
@@ -261,6 +281,11 @@ def make_fix_or_replan_prompt(
 
 
 def make_mark_done_prompt(step: dict[str, str]) -> str:
+    """中文说明：
+    - 含义：生成“该 step 已通过验收，更新 PLAN.md”的提示词。
+    - 内容：要求只改 PLAN.md：把 Next 的 step 移到 Done 并勾选；从 Backlog 选一个最小项放入 Next（保持 Next 只有一项）。
+    - 可简略：可能（相对短；但保留专用提示词让流程更稳定）。
+    """
     return (
         "This step passed verification. ONLY edit PLAN.md:\n"
         f"1) Move `- [ ] (STEP_ID={step['id']}) ...` from Next to Done, and change it to `- [x]`.\n"
@@ -270,6 +295,11 @@ def make_mark_done_prompt(step: dict[str, str]) -> str:
 
 
 def make_block_step_prompt(step: dict[str, str], last_failure: str) -> str:
+    """中文说明：
+    - 含义：生成“修复次数超限，标记 Blocked 并换下一项”的提示词。
+    - 内容：要求只改 PLAN.md：把 step 从 Next 移除并在 Notes 说明阻塞原因/需要的人类输入；同时注入最近一次失败输出尾部。
+    - 可简略：可能（短提示词；但将 Blocked 流程显式化可避免死循环）。
+    """
     return (
         "Fix attempts exceeded the limit. ONLY edit PLAN.md:\n"
         "1) Remove the step from Next; in Notes, explain why it's Blocked and what human input is needed.\n"

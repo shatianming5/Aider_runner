@@ -22,6 +22,12 @@ from .types import VerificationResult
 
 @dataclass(frozen=True)
 class EnvHandle:
+    """中文说明：
+    - 含义：同机调用（programmatic）模式下的“环境句柄”。
+    - 内容：包含目标 repo 根目录、pipeline.yml 路径与解析后的 PipelineSpec；供 rollout/evaluate API 复用。
+    - 可简略：可能（只是数据载体；但显式结构便于类型检查与扩展）。
+    """
+
     repo: Path
     pipeline_path: Path
     pipeline: PipelineSpec
@@ -29,6 +35,12 @@ class EnvHandle:
 
 @dataclass(frozen=True)
 class RolloutCallResult:
+    """中文说明：
+    - 含义：一次 rollout 调用的返回结果（programmatic API）。
+    - 内容：包含 ok、artifacts_dir、可选 rollout.json 路径，以及完整 VerificationResult（便于读取 stage 结果与 stdout/stderr）。
+    - 可简略：可能（对外 API 结果结构；可以裁字段但会影响调用方兼容性）。
+    """
+
     ok: bool
     artifacts_dir: Path
     rollout_path: Path | None
@@ -37,6 +49,12 @@ class RolloutCallResult:
 
 @dataclass(frozen=True)
 class EvaluationCallResult:
+    """中文说明：
+    - 含义：一次 evaluation 调用的返回结果（programmatic API）。
+    - 内容：包含 ok、artifacts_dir、metrics_path 与解析后的 metrics dict，以及完整 VerificationResult。
+    - 可简略：可能（对外 API 结果结构；可以裁字段但会影响调用方兼容性）。
+    """
+
     ok: bool
     artifacts_dir: Path
     metrics_path: Path | None
@@ -45,11 +63,21 @@ class EvaluationCallResult:
 
 
 def _default_artifacts_dir(repo: Path, *, prefix: str) -> Path:
+    """中文说明：
+    - 含义：生成本次 programmatic 调用的默认 artifacts 输出目录。
+    - 内容：路径为 `.aider_fsm/artifacts/<run_id>/<prefix>`；run_id 使用当前时间戳。
+    - 可简略：可能（小工具；但统一目录结构有利于审计与调试）。
+    """
     run_id = time.strftime("%Y%m%d_%H%M%S", time.localtime())
     return (repo / ".aider_fsm" / "artifacts" / run_id / prefix).resolve()
 
 
 def _list_opencode_models() -> list[str]:
+    """中文说明：
+    - 含义：调用 `opencode models` 获取可用模型列表（去 ANSI）。
+    - 内容：用于默认模型选择与把裸模型名解析到 provider/model。
+    - 可简略：是（与 `runner/cli.py` 重复，可抽公共模块）。
+    """
     if not shutil.which("opencode"):
         return []
     try:
@@ -75,6 +103,11 @@ def _list_opencode_models() -> list[str]:
 
 
 def _resolve_model(raw_model: str) -> str:
+    """中文说明：
+    - 含义：规范化模型参数为 `provider/model`。
+    - 内容：优先选择本机可用的默认模型；裸模型名会尝试在 `opencode models` 中匹配 provider（优先 myproxy）；最终回退到 openai/<id>。
+    - 可简略：是（与 `runner/cli.py` 重复，可抽公共模块）。
+    """
     s = str(raw_model or "").strip()
     if not s:
         candidates = _list_opencode_models()
@@ -98,6 +131,11 @@ def _resolve_model(raw_model: str) -> str:
 
 
 def _validate_scaffolded_pipeline(p: PipelineSpec, *, require_metrics: bool) -> list[str]:
+    """中文说明：
+    - 含义：校验 OpenCode scaffold 生成的 pipeline.yml 是否满足最小合同要求。
+    - 内容：至少要求 security.max_cmd_seconds；若 require_metrics=True，则要求 evaluation 或 benchmark 至少一方配置了 run_cmds + metrics_path + required_keys(含 score)。
+    - 可简略：是（与 `runner/runner.py` 内的 scaffold 校验逻辑重复，可合并）。
+    """
     missing: list[str] = []
     if p.security_max_cmd_seconds is None or int(p.security_max_cmd_seconds) <= 0:
         missing.append("security.max_cmd_seconds")
@@ -162,6 +200,15 @@ def open_env(
     artifacts_dir: Path | None = None,
     agent: AgentClient | None = None,
 ) -> EnvHandle:
+    """中文说明：
+    - 含义：打开一个“可同机调用”的目标 repo 环境（必要时自动下载/clone 并 scaffold 合同）。
+    - 内容：
+      1) `prepare_repo`：本地路径/远程 git/HF dataset → 得到 repo_root
+      2) pipeline.yml 存在则加载；否则（scaffold_contract=opencode）启动/连接 OpenCode 生成 `pipeline.yml` + `.aider_fsm/**`
+      3) scaffold 后校验 pipeline 满足最小要求（尤其 metrics 合同）
+      4) 返回 EnvHandle（repo/pipeline_path/pipeline）
+    - 可简略：否（这是 programmatic API 的入口胶水层）。
+    """
     prepared = prepare_repo(str(repo), clones_dir=clones_dir)
     repo_root = prepared.repo.resolve()
     pipeline_path = (repo_root / str(pipeline_rel)).resolve()
@@ -235,6 +282,11 @@ def open_env(
 
 
 def _merge_env(base: dict[str, str], overrides: dict[str, str] | None) -> dict[str, str]:
+    """中文说明：
+    - 含义：合并环境变量映射（overrides 覆盖 base）。
+    - 内容：用于把调用方传入的 `env_overrides` 合并到 pipeline 的 stage env 中。
+    - 可简略：可能（简单 merge；但单独函数能让调用点更清晰）。
+    """
     out = dict(base or {})
     if overrides:
         out.update({str(k): str(v) for k, v in overrides.items()})
@@ -249,6 +301,11 @@ def _stage_only_pipeline(
     benchmark: bool,
     env_overrides: dict[str, str] | None,
 ) -> PipelineSpec:
+    """中文说明：
+    - 含义：构造一个“只跑指定 stages”的临时 PipelineSpec（用于 programmatic 调用）。
+    - 内容：保留 security 限制；按需要保留 rollout/evaluation/benchmark 的 run_cmds 与 metrics 校验配置；并把 env_overrides 合并到各 stage 的 env。
+    - 可简略：可能（programmatic 专用；也可直接在调用点构造，但会很冗长）。
+    """
     env_overrides = env_overrides or {}
     return PipelineSpec(
         # security
@@ -290,6 +347,11 @@ def rollout(
     unattended: str = "strict",
     run_bootstrap_first: bool = True,
 ) -> RolloutCallResult:
+    """中文说明：
+    - 含义：在同机调用模式下执行 rollout（并记录 artifacts）。
+    - 内容：构造 stage-only pipeline（rollout=true）；可选先执行 `.aider_fsm/bootstrap.yml`；然后调用 `run_pipeline_verification`（tests 用 echo 跳过）并返回 RolloutCallResult。
+    - 可简略：可能（与 evaluate/rollout_and_evaluate 结构相似，可进一步抽公共逻辑）。
+    """
     artifacts_dir = (artifacts_dir or _default_artifacts_dir(env.repo, prefix="rollout")).resolve()
     p = _stage_only_pipeline(env.pipeline, rollout=True, evaluation=False, benchmark=False, env_overrides=env_overrides)
     bootstrap_path = (env.repo / ".aider_fsm" / "bootstrap.yml").resolve()
@@ -344,6 +406,11 @@ def evaluate(
     unattended: str = "strict",
     run_bootstrap_first: bool = True,
 ) -> EvaluationCallResult:
+    """中文说明：
+    - 含义：在同机调用模式下执行 evaluation（并进行 metrics 校验与 artifacts 记录）。
+    - 内容：构造 stage-only pipeline（evaluation=true）；可选 bootstrap；调用 `run_pipeline_verification` 并从结果中提取 metrics_path/metrics。
+    - 可简略：可能（与 rollout/rollout_and_evaluate 结构相似，可抽公共逻辑）。
+    """
     artifacts_dir = (artifacts_dir or _default_artifacts_dir(env.repo, prefix="evaluation")).resolve()
     p = _stage_only_pipeline(env.pipeline, rollout=False, evaluation=True, benchmark=False, env_overrides=env_overrides)
     bootstrap_path = (env.repo / ".aider_fsm" / "bootstrap.yml").resolve()
@@ -405,6 +472,11 @@ def rollout_and_evaluate(
     unattended: str = "strict",
     run_bootstrap_first: bool = True,
 ) -> tuple[RolloutCallResult, EvaluationCallResult]:
+    """中文说明：
+    - 含义：同机调用模式下一次性执行 rollout + evaluation（单次 verification pass）。
+    - 内容：构造 stage-only pipeline（rollout=true,evaluation=true）；可选 bootstrap；然后一次 `run_pipeline_verification` 同时跑两阶段并校验 evaluation metrics。
+    - 可简略：可能（组合 API；保留能让调用方更方便）。
+    """
     # One verification pass runs rollout then evaluation (and validates evaluation metrics).
     artifacts_dir = (artifacts_dir or _default_artifacts_dir(env.repo, prefix="rollout_evaluation")).resolve()
     p = _stage_only_pipeline(env.pipeline, rollout=True, evaluation=True, benchmark=False, env_overrides=env_overrides)
@@ -469,7 +541,10 @@ def rollout_and_evaluate(
 
 
 def with_env_vars(extra_env: dict[str, str]) -> dict[str, str]:
-    """Convenience helper for callers that want to pass environment variables into stages.
+    """中文说明：
+    - 含义：便捷函数：把一组 env 变量包装成可传入 `env_overrides` 的 dict。
+    - 内容：当前只是调用 `_merge_env({}, extra_env)`；示例：传入 `OPENCODE_MODEL` 控制 stage 脚本使用的模型。
+    - 可简略：是（非常薄的 helper；但对调用方可读性友好）。
 
     Example:
       rollout_and_evaluate(env, env_overrides=with_env_vars({"OPENCODE_MODEL": "opencode/gpt-5-nano"}))

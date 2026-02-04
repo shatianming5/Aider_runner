@@ -14,6 +14,12 @@ from .subprocess_utils import STDIO_TAIL_CHARS, run_cmd_capture, tail
 
 @dataclass(frozen=True)
 class ToolCall:
+    """中文说明：
+    - 含义：从 assistant 输出中解析出来的“工具调用”描述。
+    - 内容：kind 表示类型（bash/file），start 表示在原文本中的起始位置（用于排序），payload 是解析出的参数（如 command/filePath/content）。
+    - 可简略：否（tool-call 是 agent 执行闭环的基础协议）。
+    """
+
     kind: str  # bash | file
     start: int
     payload: dict[str, Any] | str
@@ -21,6 +27,12 @@ class ToolCall:
 
 @dataclass(frozen=True)
 class ToolResult:
+    """中文说明：
+    - 含义：Runner 执行单个 tool-call 的结果（用于回灌给 agent）。
+    - 内容：包含执行是否成功、以及标准化 detail（例如 read 的 content，bash 的 rc/stdout/stderr）。
+    - 可简略：否（tool loop 的关键数据结构；影响可审计性与可恢复性）。
+    """
+
     kind: str
     ok: bool
     detail: dict[str, Any]
@@ -34,6 +46,11 @@ _ATTR_RE = re.compile(r'(?P<key>[a-zA-Z_][a-zA-Z0-9_-]*)\s*=\s*"(?P<val>[^"]*)"'
 
 
 def _try_json(text: str) -> dict[str, Any] | None:
+    """中文说明：
+    - 含义：尝试把字符串解析为 JSON object（dict）。
+    - 内容：解析失败或非 dict 则返回 None；用于从 fenced code block / tag body 中提取工具参数。
+    - 可简略：可能（内部 helper；但集中处理能减少重复 try/except）。
+    """
     s = text.strip()
     if not s:
         return None
@@ -45,7 +62,15 @@ def _try_json(text: str) -> dict[str, Any] | None:
 
 
 def parse_tool_calls(text: str) -> list[ToolCall]:
-    """Extract tool calls from OpenCode-style outputs.
+    """中文说明：
+    - 含义：从 OpenCode 风格的 assistant 输出中提取 tool-calls。
+    - 内容：支持 fenced ```json```/```bash```、以及 `<tool_call><bash/read/edit>...</...></tool_call>` 等多种格式；返回按出现顺序排序并去重后的 ToolCall 列表。
+    - 可简略：否（这是 runner 与 agent 的“可执行协议解析器”；简化易导致兼容性回退）。
+
+    ---
+
+    English (original intent):
+    Extract tool calls from OpenCode-style outputs.
 
     Supported patterns:
     - ```json {\"filePath\": \"...\", \"content\": \"...\"}```  -> file write
@@ -130,6 +155,11 @@ def parse_tool_calls(text: str) -> list[ToolCall]:
 
 
 def _is_env_like(path: Path) -> bool:
+    """中文说明：
+    - 含义：判断某个路径是否类似 dotenv（可能包含敏感信息）。
+    - 内容：匹配 `.env`/`.env.*`/`*.env` 等命名；用于阻止 agent 读取/写入这些文件。
+    - 可简略：可能（启发式；可按实际项目策略调整）。
+    """
     name = path.name.lower()
     if name == ".env":
         return True
@@ -143,6 +173,11 @@ def _is_env_like(path: Path) -> bool:
 
 
 def _within_root(root: Path, target: Path) -> bool:
+    """中文说明：
+    - 含义：判断 target 是否位于 root 目录树内（越界保护）。
+    - 内容：通过 `relative_to` 实现；用于限制 tool-call 读写只能发生在 repo 内。
+    - 可简略：可能（与 `runner.paths.is_relative_to` 类似，可考虑合并）。
+    """
     try:
         target.relative_to(root)
         return True
@@ -151,6 +186,11 @@ def _within_root(root: Path, target: Path) -> bool:
 
 
 def _sanitized_env(*, unattended: str) -> dict[str, str]:
+    """中文说明：
+    - 含义：为 tool-call 中的 bash 命令构造一个“尽量不泄密”的环境变量集合。
+    - 内容：只传递 PATH/HOME/LANG 等少量基础变量；显式过滤 *_KEY/*_TOKEN/*_PASSWORD 等；再应用 strict 模式的 safe_env 默认值。
+    - 可简略：否（避免 secret 泄漏到不受信任命令的关键安全措施）。
+    """
     base: dict[str, str] = {}
     for k in ("PATH", "HOME", "LANG", "LC_ALL", "TERM"):
         v = os.environ.get(k)
@@ -168,6 +208,11 @@ def _sanitized_env(*, unattended: str) -> dict[str, str]:
 
 
 def _restricted_bash_allowed(cmd: str, *, repo: Path) -> tuple[bool, str | None]:
+    """中文说明：
+    - 含义：restricted bash 模式下，对命令做白名单式解析与校验。
+    - 内容：禁止 shell 元字符（`;|&><`）；只允许少量只读/诊断命令（ls/rg/grep、git status/diff/log/show、cat repo 内非 env 文件）。
+    - 可简略：否（这是 tool-call 执行层的核心安全边界）。
+    """
     s = cmd.strip()
     if not s:
         return False, "empty_command"
@@ -219,6 +264,12 @@ def _restricted_bash_allowed(cmd: str, *, repo: Path) -> tuple[bool, str | None]
 
 @dataclass(frozen=True)
 class ToolPolicy:
+    """中文说明：
+    - 含义：对 tool-call 的访问控制策略（文件读写 + bash 执行）。
+    - 内容：结合 repo 根目录、PLAN/pipeline 路径、purpose（plan_update/execute/scaffold 等）、bash_mode（restricted/full）与 unattended 模式来做精细化限制。
+    - 可简略：否（安全与权限分层的核心）。
+    """
+
     repo: Path
     plan_path: Path
     pipeline_path: Path | None
@@ -227,6 +278,11 @@ class ToolPolicy:
     unattended: str
 
     def allow_file_read(self, path: Path) -> tuple[bool, str | None]:
+        """中文说明：
+        - 含义：判断是否允许读取该文件。
+        - 内容：禁止读取 dotenv；禁止 repo 外路径。
+        - 可简略：可能（规则较少；但建议保留集中入口）。
+        """
         if _is_env_like(path):
             return False, "reading_env_files_is_blocked"
         if not _within_root(self.repo, path):
@@ -234,6 +290,15 @@ class ToolPolicy:
         return True, None
 
     def allow_file_write(self, path: Path) -> tuple[bool, str | None]:
+        """中文说明：
+        - 含义：判断是否允许写入该文件。
+        - 内容：按 purpose 分层：
+          - scaffold_contract：只允许写 `pipeline.yml` 与 `.aider_fsm/**`
+          - plan_update/mark_done/block_step：只允许写 `PLAN.md`
+          - execute_step：禁止写 PLAN/pipeline
+          - fix_or_replan：禁止写 pipeline
+        - 可简略：否（权限隔离的关键；简化易导致越权写入）。
+        """
         if _is_env_like(path):
             return False, "writing_env_files_is_blocked"
         if not _within_root(self.repo, path):
@@ -268,6 +333,11 @@ class ToolPolicy:
         return True, None
 
     def allow_bash(self, cmd: str) -> tuple[bool, str | None]:
+        """中文说明：
+        - 含义：判断是否允许执行某条 bash 命令。
+        - 内容：restricted 模式走 `_restricted_bash_allowed`；full 模式则复用 `security.cmd_allowed` 与 strict 的交互阻断。
+        - 可简略：否（命令执行安全边界）。
+        """
         cmd = cmd.strip()
         if not cmd:
             return False, "empty_command"
@@ -289,6 +359,13 @@ def execute_tool_calls(
     repo: Path,
     policy: ToolPolicy,
 ) -> list[ToolResult]:
+    """中文说明：
+    - 含义：逐条执行解析出的 tool-calls，并返回可回灌给 agent 的结果列表。
+    - 内容：
+      - file：支持 read（无 content）与 write（有 content），并应用 ToolPolicy 约束
+      - bash：执行命令（固定 timeout=60s），并对 stdout/stderr 截断；执行环境使用 `_sanitized_env`
+    - 可简略：否（tool loop 的执行内核；影响可控性与安全）。
+    """
     results: list[ToolResult] = []
 
     for call in calls:
@@ -388,6 +465,11 @@ def execute_tool_calls(
 
 
 def format_tool_results(results: list[ToolResult]) -> str:
+    """中文说明：
+    - 含义：把 tool 执行结果包装成 OpenCode 期望的 ` ```tool_result ... ``` ` 文本格式。
+    - 内容：将结果列表序列化为 JSON，并提示 agent 继续发起 tool-calls 或给出最终回复。
+    - 可简略：可能（格式协议相对固定；但保留集中函数便于未来调整兼容性）。
+    """
     payload = [r.detail | {"tool": r.kind, "ok": r.ok} for r in results]
     return (
         "Tool results (executed by the runner). Continue by either issuing more tool calls or responding normally.\n\n"

@@ -15,6 +15,12 @@ from .types import CmdResult, StageResult
 
 @dataclass(frozen=True)
 class BootstrapSpec:
+    """中文说明：
+    - 含义：`.aider_fsm/bootstrap.yml` 的解析后结构（v1）。
+    - 内容：描述在 pipeline 验收前要执行的命令（可为空）以及要应用的 env/workdir/timeout/retries。
+    - 可简略：否（bootstrap 是复现/同机调用的重要能力；结构化对象便于测试与演进）。
+    """
+
     version: int = 1
     cmds: list[str] = None  # type: ignore[assignment]
     env: dict[str, str] = None  # type: ignore[assignment]
@@ -23,6 +29,11 @@ class BootstrapSpec:
     retries: int = 0
 
     def __post_init__(self) -> None:
+        """中文说明：
+        - 含义：dataclass 初始化后把 None 字段归一化为可用默认值。
+        - 内容：将 `cmds/env` 从 None 变为 `[]/{}`，避免调用点反复做空值处理。
+        - 可简略：可能（也可在类型定义处避免 None；但当前写法更直观）。
+        """
         if self.cmds is None:
             object.__setattr__(self, "cmds", [])
         if self.env is None:
@@ -35,6 +46,11 @@ _DOLLAR_PLACEHOLDER = "\x00DOLLAR\x00"
 
 
 def _expand_env_value(raw: str, env: dict[str, str]) -> str:
+    """中文说明：
+    - 含义：对 bootstrap.yml 的 env 值做最小化的 shell 风格变量展开。
+    - 内容：支持 `${VAR}` 与 `$VAR`，并把 `$$` 转义成字面 `$`；不执行 shell，不做命令替换。
+    - 可简略：否（这是 bootstrap env 的关键特性；且实现刻意保持“安全且最小”）。
+    """
     # Minimal shell-style expansion for env values:
     # - supports ${VAR} and $VAR
     # - "$$" escapes to literal "$"
@@ -42,9 +58,19 @@ def _expand_env_value(raw: str, env: dict[str, str]) -> str:
     s = s.replace("$$", _DOLLAR_PLACEHOLDER)
 
     def _brace(m: re.Match[str]) -> str:
+        """中文说明：
+        - 含义：`${VAR}` 形式的替换回调函数。
+        - 内容：从 `env` 取出变量值；不存在则返回空字符串。
+        - 可简略：是（可与 `_bare` 合并成一个回调；但拆开更直观）。
+        """
         return str(env.get(m.group(1)) or "")
 
     def _bare(m: re.Match[str]) -> str:
+        """中文说明：
+        - 含义：`$VAR` 形式的替换回调函数。
+        - 内容：从 `env` 取出变量值；不存在则返回空字符串。
+        - 可简略：是（可与 `_brace` 合并；保留两个函数主要是可读性）。
+        """
         return str(env.get(m.group(1)) or "")
 
     s = _VAR_BRACE_RE.sub(_brace, s)
@@ -53,6 +79,11 @@ def _expand_env_value(raw: str, env: dict[str, str]) -> str:
 
 
 def _apply_env_mapping(base: dict[str, str], mapping: dict[str, str]) -> tuple[dict[str, str], dict[str, str]]:
+    """中文说明：
+    - 含义：把 bootstrap.yml 的 env 映射应用到基底环境，并返回 (新环境, 实际应用的键值)。
+    - 内容：按顺序扩展变量（后面的值可引用前面刚写入的变量）；用于后续 stage 命令执行与结果记录。
+    - 可简略：否（和 `_expand_env_value` 配合构成 bootstrap env 语义）。
+    """
     env = dict(base)
     applied: dict[str, str] = {}
     for k, v in (mapping or {}).items():
@@ -66,11 +97,21 @@ def _apply_env_mapping(base: dict[str, str], mapping: dict[str, str]) -> tuple[d
 
 
 def _is_sensitive_key(key: str) -> bool:
+    """中文说明：
+    - 含义：粗略判断一个环境变量 key 是否可能包含敏感信息（用于日志脱敏）。
+    - 内容：按 key 名包含 KEY/TOKEN/SECRET/PASSWORD 等子串来判断。
+    - 可简略：可能（启发式判断；可按实际需要调整或迁移到统一的 secret 管理）。
+    """
     k = (key or "").upper()
     return any(x in k for x in ("KEY", "TOKEN", "SECRET", "PASSWORD", "PASS", "PWD"))
 
 
 def _redact_env(env: dict[str, str]) -> dict[str, str]:
+    """中文说明：
+    - 含义：将 env mapping 中可能敏感的值替换为 `***redacted***`。
+    - 内容：用于写入 bootstrap artifacts，避免把 token/key 直接落盘。
+    - 可简略：否（安全与合规需要；至少要保留脱敏机制）。
+    """
     out: dict[str, str] = {}
     for k, v in (env or {}).items():
         if _is_sensitive_key(k):
@@ -81,6 +122,11 @@ def _redact_env(env: dict[str, str]) -> dict[str, str]:
 
 
 def load_bootstrap_spec(path: Path) -> tuple[BootstrapSpec, str]:
+    """中文说明：
+    - 含义：读取并解析 `.aider_fsm/bootstrap.yml`（v1），返回 (BootstrapSpec, raw_text)。
+    - 内容：校验 version/cmds/env/workdir 等字段类型；支持 `steps` 作为 `cmds` 别名；返回 raw 用于 artifacts 固化。
+    - 可简略：可能（薄封装；但集中校验便于维护与测试）。
+    """
     try:
         import yaml  # type: ignore
     except Exception as e:  # pragma: no cover
@@ -144,10 +190,15 @@ def run_bootstrap(
     unattended: str,
     artifacts_dir: Path,
 ) -> tuple[StageResult, dict[str, str]]:
-    """Run bootstrap commands and return (stage_result, applied_env).
+    """中文说明：
+    - 含义：执行 bootstrap.yml，并返回 (bootstrap 阶段结果, 应用后的 env 变量映射)。
+    - 内容：记录 bootstrap.yml/raw/env（脱敏）与每条命令的 artifacts；执行命令受同一套安全策略约束；返回的 applied_env 通常用于把 venv PATH 等注入后续 stages。
+    - 可简略：否（这是“一键可复现运行”的关键组成）。
 
-    applied_env are the expanded env vars from bootstrap.yml that callers may want to
-    apply to subsequent stages (e.g. venv PATH changes).
+    ---
+
+    English (original intent):
+    Run bootstrap commands and return (stage_result, applied_env).
     """
     artifacts_dir.mkdir(parents=True, exist_ok=True)
 

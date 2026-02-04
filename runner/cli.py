@@ -18,6 +18,11 @@ from .runner import RunnerConfig, run
 
 
 def _list_opencode_models() -> list[str]:
+    """中文说明：
+    - 含义：调用 `opencode models` 获取本机可用模型列表（去掉 ANSI 色彩）。
+    - 内容：用于默认模型选择与把裸模型名解析到正确 provider（例如 myproxy/...）。
+    - 可简略：可能（与 env_local 有重复实现；可抽公共模块）。
+    """
     if not shutil.which("opencode"):
         return []
     try:
@@ -43,6 +48,11 @@ def _list_opencode_models() -> list[str]:
 
 
 def _resolve_model(raw_model: str) -> str:
+    """中文说明：
+    - 含义：将用户传入的模型参数规范化为 `provider/model`。
+    - 内容：空字符串时尽量从 `opencode models` 选择可用默认值；裸 model_id 会尝试在 `opencode models` 里匹配并优先 myproxy；最终回退到 `openai/<id>`。
+    - 可简略：可能（与 env_local 重复；但保留集中解析可避免默认值漂移）。
+    """
     s = str(raw_model or "").strip()
     if not s:
         candidates = _list_opencode_models()
@@ -72,6 +82,11 @@ def _resolve_model(raw_model: str) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """中文说明：
+    - 含义：CLI 入口（`python -m runner ...` / `runner.__main__` / `fsm_runner.py`）。
+    - 内容：解析参数→加载 dotenv→准备 repo（本地/clone/HF）→加载/必要时 scaffold pipeline 合同→构造 RunnerConfig→运行 preflight 或进入闭环 run。
+    - 可简略：否（入口胶水层；但可考虑把重复逻辑拆到更小的 helper 以便复用/测试）。
+    """
     parser = argparse.ArgumentParser(description="OpenCode-FSM runner (single-process closed-loop executor)")
     parser.add_argument("--repo", default=".", help="repo root path (default: .)")
     parser.add_argument("--goal", default="", help="goal for PLAN.md (used only when PLAN.md is missing)")

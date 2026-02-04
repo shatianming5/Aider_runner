@@ -8,11 +8,21 @@ from runner.bootstrap import load_bootstrap_spec, run_bootstrap
 
 
 def _py_cmd(code: str) -> str:
+    """中文说明：
+    - 含义：把一段 Python 代码包装成可执行的命令行（`python -c ...`）。
+    - 内容：对解释器路径做 shell quote，用于构造跨平台相对稳定的测试命令。
+    - 可简略：是（测试里可直接拼接；保留主要为复用）。
+    """
     py = shlex.quote(sys.executable)
     return f'{py} -c "{code}"'
 
 
 def test_load_bootstrap_spec_ok(tmp_path: Path):
+    """中文说明：
+    - 含义：验证 `load_bootstrap_spec` 能正确解析 v1 bootstrap.yml。
+    - 内容：写入包含 env/cmds/workdir/timeout/retries 的 YAML，断言解析后的字段与 raw 文本符合预期。
+    - 可简略：可能（可拆成更细的字段校验参数化；但当前覆盖面已足够）。
+    """
     p = tmp_path / "bootstrap.yml"
     p.write_text(
         "\n".join(
@@ -39,6 +49,11 @@ def test_load_bootstrap_spec_ok(tmp_path: Path):
 
 
 def test_load_bootstrap_spec_invalid_version(tmp_path: Path):
+    """中文说明：
+    - 含义：验证 bootstrap.yml 的 version 不支持时会报错。
+    - 内容：写入 version=2，期望抛出 ValueError。
+    - 可简略：是（典型负例测试）。
+    """
     p = tmp_path / "bootstrap.yml"
     p.write_text("version: 2\n", encoding="utf-8")
     with pytest.raises(ValueError):
@@ -46,6 +61,11 @@ def test_load_bootstrap_spec_invalid_version(tmp_path: Path):
 
 
 def test_run_bootstrap_applies_env_and_runs_cmd(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """中文说明：
+    - 含义：验证 `run_bootstrap` 会应用 env（含变量展开）并执行 cmds。
+    - 内容：bootstrap.yml 设置 `FOO=bar`、`BAR=${FOO}-baz`，命令检查 BAR 是否为 `bar-baz`，并断言 applied_env 正确。
+    - 可简略：否（变量展开与落盘 artifacts 是 bootstrap 的关键契约；建议保留该覆盖）。
+    """
     repo = tmp_path
     (repo / ".aider_fsm").mkdir(parents=True, exist_ok=True)
     bootstrap_path = repo / ".aider_fsm" / "bootstrap.yml"
