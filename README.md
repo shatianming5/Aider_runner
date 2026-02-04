@@ -85,6 +85,12 @@ Control OpenCode bash permissions during scaffolding via `--scaffold-opencode-ba
 If `git clone` is blocked (common in restricted networks), GitHub HTTPS/SSH URLs will fall back to downloading a GitHub archive ZIP
 (`main` then `master`) and extracting it locally.
 
+Hugging Face dataset URLs are also supported (downloaded via the HF REST API without `git`):
+
+- `https://huggingface.co/datasets/<namespace>/<name>`
+- If gated/private, set `HF_TOKEN` (or `HUGGINGFACEHUB_API_TOKEN`)
+- Size limits: `AIDER_FSM_HF_MAX_TOTAL_BYTES` (default 512MB), `AIDER_FSM_HF_MAX_FILE_BYTES` (default 256MB)
+
 ### Deploy + benchmark (pipeline.yml)
 
 Add a `pipeline.yml` to the target repo to include deploy/benchmark/metrics in the verification loop:
