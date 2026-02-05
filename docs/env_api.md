@@ -82,6 +82,18 @@ The example single-file post-training loop consumes this contract:
   - `--dry-run` exercises only `env.setup -> env.rollout -> env.evaluation`
   - training mode performs a minimal PPO-style update on `(prompt, completion, reward)` samples
 
+### Rollout validation (optional)
+
+If you enable rollout contract validation (`require_samples=True` in code, or `--require-samples` in the verification suite),
+the runner validates that `rollout.json.paths.samples_jsonl` exists and contains valid `(prompt, completion, reward)` JSONL lines.
+
+For Hugging Face dataset snapshots (detected via `data/hf_manifest.json` + a test parquet with `question/answer` columns),
+it also enforces:
+
+- **Minimum sample count**: `min(AIDER_EVAL_LIMIT, test_rows)` (defaults: smoke=8, full=64 if `AIDER_EVAL_LIMIT` is unset)
+- **Prompt diversity**: prevents trivial single-prompt rollouts
+- **Prompt anchoring**: prompts must include real dataset question text (prevents synthetic unrelated tasks)
+
 ---
 
 ## Evaluation: doc/CI hints (maximize autonomy)
@@ -145,4 +157,3 @@ python3 examples/verify_suite_single_file.py \
 ```
 
 This is intended as a “full pipeline validation” harness; the numeric score depends on what the target contract/hints produce.
-
