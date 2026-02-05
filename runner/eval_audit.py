@@ -19,11 +19,11 @@ def audit_eval_script_for_hardcoded_nonzero_score(repo: Path) -> str | None:
         return f"failed_to_read_evaluation_sh: {e}"
 
     # Matches non-zero numbers like 0.92, 1, 2.5, etc. (but not 0 / 0.0 / 0.00).
-    nonzero = r"(?:0\\.[0-9]*[1-9][0-9]*|[1-9][0-9]*(?:\\.[0-9]+)?)"
+    nonzero = r"(?:0\.[0-9]*[1-9][0-9]*|[1-9][0-9]*(?:\.[0-9]+)?)"
     patterns = [
-        re.compile(rf"\\bSCORE\\s*=\\s*['\\\"]?{nonzero}['\\\"]?\\b", re.IGNORECASE),
-        re.compile(rf"\\bscore\\s*=\\s*{nonzero}\\b", re.IGNORECASE),
-        re.compile(rf"[\"']score[\"']\\s*:\\s*{nonzero}\\b", re.IGNORECASE),
+        re.compile(rf"\bSCORE\s*=\s*['\"]?{nonzero}['\"]?\b", re.IGNORECASE),
+        re.compile(rf"\bscore\s*=\s*{nonzero}\b", re.IGNORECASE),
+        re.compile(rf"[\"']score[\"']\s*:\s*{nonzero}\b", re.IGNORECASE),
     ]
     bad: list[str] = []
     for i, line in enumerate(text.splitlines(), start=1):
