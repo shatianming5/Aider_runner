@@ -754,7 +754,10 @@ def setup(
         scaffold_opencode_bash=str(scaffold_opencode_bash or "full"),
         unattended=str(unattended or "strict"),
         artifacts_dir=artifacts_dir,
-        seed_stage_skeleton=not bool(strict_opencode),
+        # Always provide a robust stage-script starting point before OpenCode scaffolding.
+        # This is benchmark-agnostic and reduces common scaffolding mistakes (broken heredocs,
+        # writing rollout/metrics outputs into artifacts instead of `.aider_fsm/**`, etc.).
+        seed_stage_skeleton=True,
         write_fallback_pipeline_yml=not bool(strict_opencode),
     )
     hints = suggest_contract_hints(env_handle.repo)
