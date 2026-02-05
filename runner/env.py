@@ -107,13 +107,74 @@ def _verification_errors_summary(verify: Any) -> str:
     return "\n".join(parts).strip()
 
 
-def _validate_rollout_samples(repo: Path, rollout_path: Path | None) -> tuple[bool, str]:
+def _find_hf_test_parquet(repo_root: Path) -> Path | None:
+    """Best-effort: find an HF dataset test split parquet (generic; no dataset-id hardcoding)."""
+    repo_root = Path(repo_root).resolve()
+    p0 = (repo_root / "main" / "test-00000-of-00001.parquet").resolve()
+    if p0.exists():
+        return p0
+    cands: list[Path] = []
+    for p in repo_root.rglob("test-*.parquet"):
+        try:
+            if p.is_file():
+                cands.append(p.resolve())
+        except Exception:
+            continue
+    cands.sort()
+    return cands[0] if cands else None
+
+
+def _hf_parquet_qa_rows(repo_root: Path) -> int | None:
+    """If repo_root is an HF snapshot with a QA test parquet, return its row count."""
+    repo_root = Path(repo_root).resolve()
+    if not (repo_root / "data" / "hf_manifest.json").exists():
+        return None
+    parquet_path = _find_hf_test_parquet(repo_root)
+    if parquet_path is None:
+        return None
+    try:
+        import pyarrow.parquet as pq  # type: ignore
+    except Exception:
+        return None
+    try:
+        pf = pq.ParquetFile(parquet_path)
+    except Exception:
+        return None
+    try:
+        schema_names = set(str(n) for n in (pf.schema.names or []))
+    except Exception:
+        schema_names = set()
+    if not {"question", "answer"}.issubset(schema_names):
+        return None
+    try:
+        meta = pf.metadata
+        if meta is not None:
+            n = int(meta.num_rows)
+            return n if n > 0 else None
+    except Exception:
+        return None
+    return None
+
+
+def _validate_rollout_samples(
+    repo: Path,
+    rollout_path: Path | None,
+    *,
+    mode: str,
+    eval_limit: int | None,
+) -> tuple[bool, str]:
     """Validate that rollout produced a usable samples JSONL reference.
 
-    This is benchmark-agnostic and only enforces the minimal contract required by RL training:
+    Minimal contract enforced for all targets:
     - rollout.json exists and is a JSON object
     - rollout.json.paths.samples_jsonl exists and points to an existing JSONL file
     - the JSONL file contains at least one valid sample line with keys: prompt, completion, reward
+
+    Additional enforcement for Hugging Face QA dataset snapshots (best-effort):
+    - if `data/hf_manifest.json` exists AND a test parquet with columns (question, answer) exists,
+      require that the samples JSONL contains at least `min(eval_limit, test_rows)` valid samples
+      (defaults match `runner.generic_rollout`: smoke=8, full=64 when eval_limit is not set).
+      Also require some prompt diversity to avoid trivial placeholder rollouts.
     """
     repo = Path(repo).resolve()
     p = (rollout_path or (repo / ".aider_fsm" / "rollout.json")).resolve()
@@ -139,14 +200,28 @@ def _validate_rollout_samples(repo: Path, rollout_path: Path | None) -> tuple[bo
     except Exception:
         pass
 
-    # Parse a bounded number of lines to find at least one valid sample.
+    # Determine whether we should enforce a minimum sample count (HF QA parquet snapshots).
+    mode2 = str(mode or "").strip().lower() or "smoke"
+    default_limit = 64 if mode2 == "full" else 8
+    try:
+        lim = int(eval_limit) if eval_limit is not None else int(default_limit)
+    except Exception:
+        lim = int(default_limit)
+    lim = max(1, int(lim))
+
+    qa_rows = _hf_parquet_qa_rows(repo)
+    expected_min = min(int(qa_rows), int(lim)) if isinstance(qa_rows, int) and qa_rows > 0 else None
+    distinct_target = 1 if not expected_min or expected_min <= 1 else min(10, int(expected_min))
+
+    # Parse samples (bounded by the contract and, when applicable, by expected_min).
+    valid = 0
+    distinct_prompts: set[str] = set()
+    to_scan = int(expected_min or 1)
+    # Keep a cap for prompt diversity scanning (does not affect counting).
+    diversity_scan_cap = max(1, min(200, to_scan))
     try:
         with samples_path.open("r", encoding="utf-8", errors="replace") as f:
-            checked = 0
             for line in f:
-                if checked >= 200:
-                    break
-                checked += 1
                 s = line.strip()
                 if not s:
                     continue
@@ -160,11 +235,23 @@ def _validate_rollout_samples(repo: Path, rollout_path: Path | None) -> tuple[bo
                 completion = item.get("completion")
                 reward = item.get("reward")
                 if isinstance(prompt, str) and isinstance(completion, str) and isinstance(reward, (int, float)):
-                    return True, "ok"
+                    valid += 1
+                    if len(distinct_prompts) < diversity_scan_cap:
+                        distinct_prompts.add(prompt)
+                    if expected_min is None and valid >= 1:
+                        return True, "ok"
+                    if expected_min is not None and valid >= int(expected_min) and len(distinct_prompts) >= int(distinct_target):
+                        return True, "ok"
     except Exception as e:
         return False, f"failed_to_read_samples_jsonl: {e}"
 
-    return False, "samples_jsonl_has_no_valid_samples"
+    if valid <= 0:
+        return False, "samples_jsonl_has_no_valid_samples"
+    if expected_min is not None and valid < int(expected_min):
+        return False, f"hf_qa_samples_too_few: expected>={expected_min} got={valid}"
+    if expected_min is not None and len(distinct_prompts) < int(distinct_target):
+        return False, f"hf_qa_prompts_not_diverse: expected>={distinct_target} got={len(distinct_prompts)}"
+    return True, "ok"
 
 
 @dataclass
@@ -368,7 +455,17 @@ class EnvSession:
                 run_bootstrap_first=True,
             )
             if rollout_res.ok and bool(require_samples):
-                ok_samples, reason = _validate_rollout_samples(self.env.repo, rollout_res.rollout_path)
+                raw_limit = overrides.get("AIDER_EVAL_LIMIT")
+                try:
+                    lim = int(str(raw_limit).strip()) if str(raw_limit or "").strip() else None
+                except Exception:
+                    lim = None
+                ok_samples, reason = _validate_rollout_samples(
+                    self.env.repo,
+                    rollout_res.rollout_path,
+                    mode=str(mode or "smoke"),
+                    eval_limit=lim,
+                )
                 if not ok_samples:
                     try:
                         (rollout_dir / "rollout_contract_error.txt").write_text(str(reason) + "\n", encoding="utf-8")
@@ -654,7 +751,17 @@ class EnvSession:
                             verify=eval_res.verify,
                         )
             if rollout_res.ok and bool(require_samples):
-                ok_samples, reason = _validate_rollout_samples(self.env.repo, rollout_res.rollout_path)
+                raw_limit = overrides2.get("AIDER_EVAL_LIMIT")
+                try:
+                    lim = int(str(raw_limit).strip()) if str(raw_limit or "").strip() else None
+                except Exception:
+                    lim = None
+                ok_samples, reason = _validate_rollout_samples(
+                    self.env.repo,
+                    rollout_res.rollout_path,
+                    mode=str(mode or "smoke"),
+                    eval_limit=lim,
+                )
                 if not ok_samples:
                     try:
                         (roll_eval_dir / "rollout_contract_error.txt").write_text(str(reason) + "\n", encoding="utf-8")
