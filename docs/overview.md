@@ -30,6 +30,7 @@ The intent is to integrate with agent projects where you need **repeatable bench
 - `docs/pipeline_spec.md`
 - `docs/bootstrap_spec.md`
 - `docs/metrics_schema.md`
+- `docs/env_api.md` (single-file `import env` API)
 
 ## Optional: local model utilities
 

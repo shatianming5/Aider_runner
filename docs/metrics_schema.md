@@ -15,7 +15,7 @@ To make results comparable across repos (evaluation + rollout + post-training), 
 
 Recommended minimum:
 
-- `ok`: boolean (true only when the run produced a real score)
+- `ok`: boolean (true only when the run produced a real score; not “all tests passed”)
 - `score`: number (or `eval.score`)
 - `ts`: ISO timestamp string
 - `run_id`: string (you can copy `AIDER_FSM_RUN_ID`)
@@ -26,6 +26,9 @@ Recommended minimum:
 
 - `eval.score`: overall scalar score (primary KPI)
 - `eval.details`: optional object/array for per-task breakdown
+- (optional but recommended when using doc/CI hints):
+  - `.aider_fsm/hints_used.json` (proof that an “official” command was executed)
+  - `.aider_fsm/hints_run.json` (debug trace of attempted commands)
 
 ### Rollout (post-training RL)
 

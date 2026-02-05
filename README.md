@@ -168,6 +168,7 @@ See `examples/actions.example.yml`.
 ## Docs
 
 - `docs/overview.md`
+- `docs/env_api.md`
 - `docs/pipeline_spec.md`
 - `docs/bootstrap_spec.md`
 - `docs/metrics_schema.md`
@@ -180,18 +181,34 @@ See `examples/actions.example.yml`.
 pytest -q
 ```
 
-## Programmatic (same-machine) usage
+## Programmatic `env` API (single-file training scripts)
 
-If you want to call a target repo's rollout/evaluation stages from other Python code (no deployment),
-you can import the helper wrapper:
+If you want a single-file workflow like:
+
+- `import env`
+- `env.setup(url_or_path)`
+- `env.rollout(llm, ...)`
+- `env.evaluation(...)`
+
+See `docs/env_api.md`.
 
 ```python
-from runner.env_local import open_env, rollout_and_evaluate
+import env
 
-env = open_env("https://github.com/<owner>/<repo>", require_pipeline=False)
-rollout_res, eval_res = rollout_and_evaluate(env, env_overrides={"OPENCODE_MODEL": "opencode/gpt-5-nano"})
-print(eval_res.metrics)
+sess = env.setup("https://github.com/<owner>/<repo>")
+rollout_res, eval_res = env.rollout_and_evaluation("deepseek-v3.2", session=sess, mode="full")
+print(eval_res.metrics)  # dict written by the target contract
 print(eval_res.artifacts_dir)
+env.teardown(session=sess)
 ```
 
-This runs the repo's `pipeline.yml` stages (or auto-scaffolds a minimal contract if missing) and returns artifacts/metrics.
+For end-to-end verification across multiple targets (URL/path) without benchmark-specific runner code:
+
+```bash
+python3 examples/verify_suite_single_file.py \
+  --targets https://huggingface.co/datasets/openai/gsm8k \
+  --targets https://github.com/evalplus/evalplus \
+  --targets https://github.com/Farama-Foundation/miniwob-plusplus \
+  --llm deepseek-v3.2 \
+  --eval-mode full
+```

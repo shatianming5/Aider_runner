@@ -37,3 +37,8 @@ python3 /path/to/OpenCode-FSM-Runner/fsm_runner.py --repo . --pipeline pipeline.
 ```
 
 Artifacts are written under `.aider_fsm/artifacts/<run_id>/`.
+
+## Optional: programmatic usage
+
+If you want to drive `setup/rollout/evaluation` from a single Python training script (no benchmark-specific runner code),
+see `docs/env_api.md` (`import env`).
