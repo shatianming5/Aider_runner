@@ -4,6 +4,7 @@ import json
 import os
 import re
 import shlex
+import shutil
 import subprocess
 import sys
 import time
@@ -85,6 +86,7 @@ _BRACKET_GROUP_RE = re.compile(r"\[([^\]]+)\]")
 _ANGLE_GROUP_RE = re.compile(r"<[^>]+>")
 _GHA_EXPR_RE = re.compile(r"\$\{\{\s*([^}]+)\s*\}\}")
 _PIPE_TO_BASH_RE = re.compile(r"(?i)\b(?:curl|wget)\b[^\n]*\|[^\n]*\bbash\b")
+_DOTTED_MODULE_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z0-9_.]+$")
 
 
 def normalize_hint_command(cmd: str, *, env: dict[str, str]) -> tuple[str, str | None]:
@@ -138,6 +140,30 @@ def normalize_hint_command(cmd: str, *, env: dict[str, str]) -> tuple[str, str |
     s2 = "\n".join(lines).strip()
     if not s2:
         return "", "empty_after_sanitize"
+
+    # Best-effort: rewrite console-script style invocations like `pkg.module ...`
+    # into `python -m pkg.module ...` when the entrypoint isn't available.
+    #
+    # This is generic and avoids benchmark-specific hardcoding (common in README/CI).
+    py = (env.get("AIDER_FSM_PYTHON") or env.get("PYTHON") or "python3").strip() or "python3"
+
+    def _rewrite_line(line: str) -> str:
+        try:
+            parts = shlex.split(line, posix=True)
+        except Exception:
+            return line
+        if not parts:
+            return line
+        first = str(parts[0] or "").strip()
+        if not first or "/" in first or first.startswith((".", "~")):
+            return line
+        if _DOTTED_MODULE_RE.fullmatch(first) and shutil.which(first) is None:
+            rest = " ".join(shlex.quote(str(p)) for p in parts[1:])
+            base = f"{shlex.quote(py)} -m {shlex.quote(first)}"
+            return f"{base} {rest}".strip() if rest else base
+        return line
+
+    s2 = "\n".join([_rewrite_line(line) for line in s2.splitlines() if line.strip()]).strip()
 
     # If the command still contains bracket placeholders, it's likely not directly runnable.
     if "[" in s2 and "]" in s2:
