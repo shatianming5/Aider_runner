@@ -77,6 +77,13 @@ def setup(target: Any, **kwargs: Any) -> EnvSession:
             if k in cfg and cfg.get(k) is not None:
                 call_kwargs[k] = cfg.get(k)
 
+        # `runner.env.setup` expects Path objects for these fields. The mapping-form API
+        # commonly passes strings, so coerce here to keep `env.setup({...})` robust.
+        if "clones_dir" in call_kwargs:
+            call_kwargs["clones_dir"] = _as_path(call_kwargs.get("clones_dir"))
+        if "artifacts_dir" in call_kwargs:
+            call_kwargs["artifacts_dir"] = _as_path(call_kwargs.get("artifacts_dir"))
+
         sess = _setup(str(repo), **call_kwargs)
 
         runtime_env_path = _as_path(cfg.get("runtime_env_path"))

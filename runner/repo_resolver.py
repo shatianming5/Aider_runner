@@ -430,6 +430,49 @@ class PreparedRepo:
     cloned_from: str | None = None
 
 
+def _find_reusable_clone(base: Path, *, prefix: str) -> Path | None:
+    """Best-effort: reuse an existing clone/snapshot under `base` when available.
+
+    Motivation: when callers pass an explicit `clones_dir`, they usually want stable
+    caching to avoid repeated network downloads and repeated OpenCode scaffolding.
+    We keep the behavior generic: no repo-specific knowledge, only directory naming
+    conventions produced by this file.
+    """
+    base = Path(base).expanduser().resolve()
+    pref = str(prefix or "").strip()
+    if not pref:
+        return None
+
+    candidates: list[Path] = []
+    stable = (base / pref).resolve()
+    if stable.exists():
+        candidates.append(stable)
+    candidates.extend(sorted(base.glob(f"{pref}_*")))
+
+    reusable: list[Path] = []
+    for p in candidates:
+        try:
+            if not p.exists() or not p.is_dir():
+                continue
+        except Exception:
+            continue
+        # Marker(s) that strongly suggest this directory is a complete fetched snapshot.
+        try:
+            if (p / ".git").exists() or (p / "data" / "hf_manifest.json").exists():
+                reusable.append(p)
+        except Exception:
+            continue
+
+    def _mtime(path: Path) -> float:
+        try:
+            return float(path.stat().st_mtime)
+        except Exception:
+            return 0.0
+
+    reusable.sort(key=_mtime, reverse=True)
+    return reusable[0].resolve() if reusable else None
+
+
 def prepare_repo(repo_arg: str, *, clones_dir: Path | None = None) -> PreparedRepo:
     """中文说明：
     - 含义：把用户输入的 `--repo` 参数解析成可用的本地目录。
@@ -457,6 +500,12 @@ def prepare_repo(repo_arg: str, *, clones_dir: Path | None = None) -> PreparedRe
         base = base.expanduser().resolve()
         base.mkdir(parents=True, exist_ok=True)
 
+        if clones_dir is not None:
+            prefix = f"hf_{namespace}_{name}"
+            reused = _find_reusable_clone(base, prefix=prefix)
+            if reused is not None:
+                return PreparedRepo(repo=reused.resolve(), cloned_from=raw)
+
         ts = time.strftime("%Y%m%d_%H%M%S", time.localtime())
         dest = base / f"hf_{namespace}_{name}_{ts}"
         env = dict(os.environ)
@@ -471,8 +520,14 @@ def prepare_repo(repo_arg: str, *, clones_dir: Path | None = None) -> PreparedRe
     base = base.expanduser().resolve()
     base.mkdir(parents=True, exist_ok=True)
 
+    slug = _repo_slug(url)
+    if clones_dir is not None:
+        reused = _find_reusable_clone(base, prefix=slug)
+        if reused is not None:
+            return PreparedRepo(repo=reused.resolve(), cloned_from=url)
+
     ts = time.strftime("%Y%m%d_%H%M%S", time.localtime())
-    dest = base / f"{_repo_slug(url)}_{ts}"
+    dest = base / f"{slug}_{ts}"
     env = dict(os.environ)
     env.setdefault("GIT_TERMINAL_PROMPT", "0")
 

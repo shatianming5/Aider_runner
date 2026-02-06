@@ -87,6 +87,7 @@ _ANGLE_GROUP_RE = re.compile(r"<[^>]+>")
 _GHA_EXPR_RE = re.compile(r"\$\{\{\s*([^}]+)\s*\}\}")
 _PIPE_TO_BASH_RE = re.compile(r"(?i)\b(?:curl|wget)\b[^\n]*\|[^\n]*\bbash\b")
 _DOTTED_MODULE_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z0-9_.]+$")
+_DOCKER_LINE_RE = re.compile(r"(?im)^\s*docker\s+")
 
 
 def normalize_hint_command(cmd: str, *, env: dict[str, str]) -> tuple[str, str | None]:
@@ -206,6 +207,33 @@ def _is_truthy(value: str | None) -> bool:
     return v in ("1", "true", "yes", "y", "on")
 
 
+def _docker_available(*, env: dict[str, str]) -> tuple[bool, str]:
+    """Best-effort check for a usable local Docker daemon.
+
+    This is intentionally generic and only used to avoid spending hint attempts on
+    guaranteed-failing docker commands (e.g. Docker Desktop / Colima not running).
+    """
+    if shutil.which("docker") is None:
+        return False, "docker_not_found"
+    try:
+        res = subprocess.run(
+            ["docker", "info"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=6,
+            env=env,
+        )
+    except Exception as e:
+        return False, f"docker_info_failed: {e}"
+    if int(res.returncode) != 0:
+        tail = (res.stderr or res.stdout or "").strip()
+        if len(tail) > 500:
+            tail = tail[-500:]
+        return False, tail or f"docker_info_rc={res.returncode}"
+    return True, "ok"
+
+
 def run_hints(
     *,
     repo: Path,
@@ -271,6 +299,7 @@ def run_hints(
     ok = False
     score = 0.0
     reason = ""
+    docker_status: tuple[bool, str] | None = None
 
     def _parse_pytest_counts(text: str) -> tuple[int, int, int] | None:
         """Parse (passed, failed, errors) from pytest output (best-effort)."""
@@ -316,6 +345,24 @@ def run_hints(
                 )
             )
             continue
+
+        if _DOCKER_LINE_RE.search(sanitized):
+            if docker_status is None:
+                docker_status = _docker_available(env=env2)
+            if not docker_status[0]:
+                attempts.append(
+                    HintAttempt(
+                        raw=raw,
+                        sanitized=sanitized,
+                        rc=0,
+                        seconds=0.0,
+                        timed_out=False,
+                        stdout_tail="",
+                        stderr_tail="",
+                        skip_reason=f"docker_unavailable: {docker_status[1]}",
+                    )
+                )
+                continue
 
         t0 = time.monotonic()
         timed_out = False

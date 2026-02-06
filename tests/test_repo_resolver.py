@@ -195,3 +195,39 @@ def test_prepare_repo_hf_dataset_download(tmp_path: Path, monkeypatch: pytest.Mo
 
     manifest = (prepared.repo / "data" / "hf_manifest.json").read_text(encoding="utf-8")
     assert "example/dataset" in manifest
+
+
+def test_prepare_repo_reuses_existing_git_clone(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """When clones_dir is provided, prefer reusing the newest matching clone to avoid re-downloads."""
+    url = "https://github.com/foo/bar.git"
+    existing = tmp_path / "foo_bar_20000101_000000"
+    (existing / ".git").mkdir(parents=True)
+
+    def boom(*args, **kwargs):
+        raise AssertionError("unexpected external fetch; expected reuse")
+
+    monkeypatch.setattr("runner.repo_resolver.subprocess.run", boom)
+    monkeypatch.setattr("runner.repo_resolver.urlopen", boom)
+
+    prepared = prepare_repo(url, clones_dir=tmp_path)
+    assert prepared.cloned_from == url
+    assert prepared.repo == existing.resolve()
+
+
+def test_prepare_repo_reuses_existing_hf_snapshot(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """When clones_dir is provided, prefer reusing the newest matching HF snapshot."""
+    url = "https://huggingface.co/datasets/example/dataset"
+    existing = tmp_path / "hf_example_dataset_20000101_000000"
+    (existing / ".git").mkdir(parents=True)
+    (existing / "data").mkdir(parents=True)
+    (existing / "data" / "hf_manifest.json").write_text("{}", encoding="utf-8")
+
+    def boom(*args, **kwargs):
+        raise AssertionError("unexpected external fetch; expected reuse")
+
+    monkeypatch.setattr("runner.repo_resolver.subprocess.run", boom)
+    monkeypatch.setattr("runner.repo_resolver.urlopen", boom)
+
+    prepared = prepare_repo(url, clones_dir=tmp_path)
+    assert prepared.cloned_from == url
+    assert prepared.repo == existing.resolve()
