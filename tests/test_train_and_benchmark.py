@@ -16,6 +16,8 @@ def test_train_and_benchmark_uses_env_api_in_order(monkeypatch, tmp_path: Path):
     targets_file.write_text("\n".join(targets) + "\n", encoding="utf-8")
 
     out_root = tmp_path / "out"
+    clones_dir = tmp_path / "clones"
+    clones_dir.mkdir(parents=True, exist_ok=True)
     events: list[tuple[str, str, str]] = []
     train_calls: list[str] = []
 
@@ -48,6 +50,7 @@ def test_train_and_benchmark_uses_env_api_in_order(monkeypatch, tmp_path: Path):
 
     def fake_setup(cfg, **_kwargs):
         repo = str((cfg or {}).get("repo") or "")
+        assert (cfg or {}).get("clones_dir") == clones_dir.resolve()
         events.append(("setup", repo, ""))
         return FakeSession(repo)
 
@@ -68,6 +71,8 @@ def test_train_and_benchmark_uses_env_api_in_order(monkeypatch, tmp_path: Path):
             str(out_root),
             "--targets-file",
             str(targets_file),
+            "--clones-dir",
+            str(clones_dir),
             "--segments",
             "2",
             "--steps-per-segment",

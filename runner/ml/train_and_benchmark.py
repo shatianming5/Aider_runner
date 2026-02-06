@@ -60,6 +60,7 @@ def _run_env_target(
     target: str,
     trained_model_dir: Path,
     opencode_model: str,
+    clones_dir: Path | None,
     artifacts_dir: Path,
     unattended: str,
     require_metrics: bool,
@@ -80,6 +81,7 @@ def _run_env_target(
         sess = env.setup(
             {
                 "repo": str(target),
+                "clones_dir": clones_dir.resolve() if clones_dir is not None else "",
                 "require_metrics": bool(require_metrics),
                 "opencode_model": str(opencode_model or ""),
                 "unattended": str(unattended or "strict"),
@@ -137,6 +139,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--base-model", required=True, help="HF model id or local dir (first segment base)")
     p.add_argument("--out-root", required=True, help="output root directory for checkpoints and summary")
     p.add_argument("--benchmarks-file", "--targets-file", dest="targets_file", required=True, help="text file: one target URL/path per line")
+    p.add_argument("--clones-dir", default="", help="Where to clone/download targets (optional; enables reuse).")
     p.add_argument("--segments", type=int, default=1, help="how many train+eval segments to run (default: 1)")
     p.add_argument("--steps-per-segment", type=int, default=8)
     p.add_argument("--seq-len", type=int, default=256)
@@ -173,6 +176,9 @@ def main(argv: list[str] | None = None) -> int:
     if not targets_list:
         raise SystemExit("targets file is empty")
 
+    clones_dir = (
+        Path(str(args.clones_dir)).expanduser().resolve() if str(args.clones_dir or "").strip() else None
+    )
     targets = [s.strip() for s in str(args.target_modules or "").split(",") if s.strip()]
 
     summary: dict[str, Any] = {
@@ -227,6 +233,7 @@ def main(argv: list[str] | None = None) -> int:
                 target=target,
                 trained_model_dir=Path(train_res.model_dir),
                 opencode_model=str(args.opencode_model),
+                clones_dir=clones_dir,
                 artifacts_dir=run_dir,
                 unattended=str(args.unattended),
                 require_metrics=bool(args.require_metrics),
@@ -248,6 +255,7 @@ def main(argv: list[str] | None = None) -> int:
                     target=target,
                     trained_model_dir=Path(train_res.model_dir),
                     opencode_model=str(args.opencode_model),
+                    clones_dir=clones_dir,
                     artifacts_dir=run_dir,
                     unattended=str(args.unattended),
                     require_metrics=bool(args.require_metrics),
