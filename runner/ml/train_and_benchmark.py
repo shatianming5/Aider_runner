@@ -2,13 +2,19 @@ from __future__ import annotations
 
 import argparse
 import json
-import subprocess
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
+ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+import env
+
+from runner.dotenv import load_dotenv
 from .train_lora import train_lora
 
 
@@ -29,81 +35,108 @@ def _read_lines(path: Path) -> list[str]:
 
 @dataclass(frozen=True)
 class BenchmarkRun:
-    repo: str
+    target: str
+    mode: str
+    rollout_ok: bool
+    evaluation_ok: bool
     rc: int
     metrics: dict[str, Any] | None
     artifacts_dir: str
-    stdout_tail: str
-    stderr_tail: str
+    error: str | None
 
 
-def _tail(s: str, n: int) -> str:
-    t = str(s or "")
-    return t if len(t) <= n else t[-n:]
+def _target_slug(target: str) -> str:
+    raw = str(target or "").strip().rstrip("/")
+    if not raw:
+        return "target"
+    tail = raw.split("/")[-1] or raw
+    out = "".join(ch if ch.isalnum() or ch in ("-", "_", ".") else "_" for ch in tail)
+    out = out.strip("._-")
+    return out or "target"
 
 
-def _run_opencode_run(
+def _run_env_target(
     *,
-    repo: str,
+    target: str,
     trained_model_dir: Path,
     opencode_model: str,
     artifacts_dir: Path,
     unattended: str,
     require_metrics: bool,
+    require_samples: bool,
     repair_iters: int,
+    strict_opencode: bool,
+    audit: str,
+    mode: str,
     env_overrides: dict[str, str],
 ) -> BenchmarkRun:
-    args: list[str] = [
-        sys.executable,
-        "-m",
-        "runner.opencode_run",
-        "--repo",
-        str(repo),
-        "--trained-model-dir",
-        str(trained_model_dir.resolve()),
-        "--artifacts-dir",
-        str(artifacts_dir.resolve()),
-        "--unattended",
-        str(unattended or "strict"),
-        "--repair-iters",
-        str(int(repair_iters or 0)),
-        "--env-file",
-        "",
-    ]
-    if str(opencode_model or "").strip():
-        args.extend(["--model", str(opencode_model).strip()])
-    if require_metrics:
-        args.append("--require-metrics")
-    else:
-        args.append("--no-require-metrics")
-    for k, v in (env_overrides or {}).items():
-        args.extend(["--env", f"{str(k)}={str(v)}"])
-
-    res = subprocess.run(args, check=False, capture_output=True, text=True)
+    sess: env.EnvSession | None = None
+    rollout_ok = False
+    eval_ok = False
     metrics: dict[str, Any] | None = None
-    if res.stdout:
-        try:
-            parsed = json.loads(res.stdout.strip().splitlines()[-1])
-            if isinstance(parsed, dict):
-                metrics = parsed
-        except Exception:
-            metrics = None
+    err: str | None = None
 
+    try:
+        sess = env.setup(
+            {
+                "repo": str(target),
+                "require_metrics": bool(require_metrics),
+                "opencode_model": str(opencode_model or ""),
+                "unattended": str(unattended or "strict"),
+                "strict_opencode": bool(strict_opencode),
+                "audit": str(audit or "on"),
+                "artifacts_dir": artifacts_dir.resolve(),
+            }
+        )
+        rollout_res = sess.rollout(
+            trained_model_dir.resolve(),
+            mode=str(mode or "smoke"),
+            require_samples=bool(require_samples),
+            env_overrides=dict(env_overrides or {}),
+            artifacts_dir=artifacts_dir.resolve(),
+            repair_iters=int(repair_iters or 0),
+        )
+        rollout_ok = bool(rollout_res.ok)
+
+        eval_res = sess.evaluate(
+            mode=str(mode or "smoke"),
+            env_overrides=dict(env_overrides or {}),
+            artifacts_dir=artifacts_dir.resolve(),
+            repair_iters=int(repair_iters or 0),
+        )
+        eval_ok = bool(eval_res.ok)
+        metrics = eval_res.metrics if isinstance(eval_res.metrics, dict) else None
+    except Exception as e:
+        err = str(e)
+    finally:
+        if sess is not None:
+            try:
+                env.teardown(
+                    session=sess,
+                    env_overrides=dict(env_overrides or {}),
+                    artifacts_dir=artifacts_dir.resolve(),
+                )
+            except Exception:
+                pass
+
+    rc = 0 if (rollout_ok and eval_ok and err is None) else 1
     return BenchmarkRun(
-        repo=str(repo),
-        rc=int(res.returncode),
+        target=str(target),
+        mode=str(mode or "smoke"),
+        rollout_ok=rollout_ok,
+        evaluation_ok=eval_ok,
+        rc=rc,
         metrics=metrics,
-        artifacts_dir=str(artifacts_dir),
-        stdout_tail=_tail(res.stdout or "", 2000),
-        stderr_tail=_tail(res.stderr or "", 2000),
+        artifacts_dir=str(artifacts_dir.resolve()),
+        error=err,
     )
 
 
 def main(argv: list[str] | None = None) -> int:
-    p = argparse.ArgumentParser(description="Train a 0.5B-ish model and run benchmarks after each segment.")
+    p = argparse.ArgumentParser(description="Train a 0.5B-ish model and run rollout+evaluation for each target per segment.")
     p.add_argument("--base-model", required=True, help="HF model id or local dir (first segment base)")
     p.add_argument("--out-root", required=True, help="output root directory for checkpoints and summary")
-    p.add_argument("--benchmarks-file", required=True, help="text file: one repo/url per line")
+    p.add_argument("--benchmarks-file", "--targets-file", dest="targets_file", required=True, help="text file: one target URL/path per line")
     p.add_argument("--segments", type=int, default=1, help="how many train+eval segments to run (default: 1)")
     p.add_argument("--steps-per-segment", type=int, default=8)
     p.add_argument("--seq-len", type=int, default=256)
@@ -119,17 +152,26 @@ def main(argv: list[str] | None = None) -> int:
 
     p.add_argument("--opencode-model", default="", help="OpenCode model for scaffolding (provider/model)")
     p.add_argument("--unattended", choices=("strict", "guided"), default="strict")
+    p.add_argument("--audit", choices=("on", "off", "warn-only"), default="on")
     p.add_argument("--require-metrics", action=argparse.BooleanOptionalAction, default=True)
-    p.add_argument("--repair-iters", type=int, default=3, help="pass through to opencode_run (default: 3)")
-    p.add_argument("--smoke-limit", type=int, default=20, help="pass AIDER_EVAL_LIMIT for smoke runs")
+    p.add_argument("--require-samples", action=argparse.BooleanOptionalAction, default=False)
+    p.add_argument("--repair-iters", type=int, default=3, help="max repair iterations for rollout/evaluation contract")
+    p.add_argument("--strict-opencode", action=argparse.BooleanOptionalAction, default=True)
+    p.add_argument("--smoke-limit", type=int, default=20, help="set AIDER_EVAL_LIMIT for smoke runs")
     p.add_argument("--full-after-last", action="store_true", help="also run a full pass after the final segment")
+    p.add_argument("--env-file", default=".env", help="dotenv path to load before running (set empty to disable)")
+    p.add_argument("--env-override", action="store_true", help="override existing env vars with values from --env-file")
     args = p.parse_args(list(argv) if argv is not None else None)
+
+    env_file = str(args.env_file or "").strip()
+    if env_file:
+        load_dotenv(env_file, override=bool(args.env_override))
 
     out_root = Path(str(args.out_root)).expanduser().resolve()
     out_root.mkdir(parents=True, exist_ok=True)
-    repos = _read_lines(Path(str(args.benchmarks_file)).expanduser())
-    if not repos:
-        raise SystemExit("benchmarks-file is empty")
+    targets_list = _read_lines(Path(str(args.targets_file)).expanduser())
+    if not targets_list:
+        raise SystemExit("targets file is empty")
 
     targets = [s.strip() for s in str(args.target_modules or "").split(",") if s.strip()]
 
@@ -138,7 +180,7 @@ def main(argv: list[str] | None = None) -> int:
         "base_model": str(args.base_model),
         "segments": int(args.segments),
         "steps_per_segment": int(args.steps_per_segment),
-        "benchmarks": list(repos),
+        "targets": list(targets_list),
         "runs": [],
     }
 
@@ -178,37 +220,45 @@ def main(argv: list[str] | None = None) -> int:
         smoke_env = {"AIDER_EVAL_MODE": "smoke"}
         if int(args.smoke_limit or 0) > 0:
             smoke_env["AIDER_EVAL_LIMIT"] = str(int(args.smoke_limit))
-        for repo in repos:
-            run_dir = out_root / f"seg_{seg_idx:03d}" / "smoke" / Path(repo).name.replace("/", "_")
+        for target in targets_list:
+            run_dir = out_root / f"seg_{seg_idx:03d}" / "smoke" / _target_slug(target)
             run_dir.mkdir(parents=True, exist_ok=True)
-            r = _run_opencode_run(
-                repo=repo,
+            r = _run_env_target(
+                target=target,
                 trained_model_dir=Path(train_res.model_dir),
                 opencode_model=str(args.opencode_model),
                 artifacts_dir=run_dir,
                 unattended=str(args.unattended),
                 require_metrics=bool(args.require_metrics),
+                require_samples=bool(args.require_samples),
                 repair_iters=int(args.repair_iters),
+                strict_opencode=bool(args.strict_opencode),
+                audit=str(args.audit),
+                mode="smoke",
                 env_overrides=smoke_env,
             )
-            seg_entry["smoke"].append(r.__dict__)
+            seg_entry["smoke"].append(asdict(r))
 
         if bool(args.full_after_last) and seg_idx == int(args.segments) - 1:
             full_env = {"AIDER_EVAL_MODE": "full"}
-            for repo in repos:
-                run_dir = out_root / f"seg_{seg_idx:03d}" / "full" / Path(repo).name.replace("/", "_")
+            for target in targets_list:
+                run_dir = out_root / f"seg_{seg_idx:03d}" / "full" / _target_slug(target)
                 run_dir.mkdir(parents=True, exist_ok=True)
-                r = _run_opencode_run(
-                    repo=repo,
+                r = _run_env_target(
+                    target=target,
                     trained_model_dir=Path(train_res.model_dir),
                     opencode_model=str(args.opencode_model),
                     artifacts_dir=run_dir,
                     unattended=str(args.unattended),
                     require_metrics=bool(args.require_metrics),
+                    require_samples=bool(args.require_samples),
                     repair_iters=int(args.repair_iters),
+                    strict_opencode=bool(args.strict_opencode),
+                    audit=str(args.audit),
+                    mode="full",
                     env_overrides=full_env,
                 )
-                seg_entry["full"].append(r.__dict__)
+                seg_entry["full"].append(asdict(r))
 
         summary["runs"].append(seg_entry)
         (out_root / "train_and_benchmark_summary.json").write_text(

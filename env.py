@@ -26,6 +26,7 @@ from runner.env import (
     EnvSession,
     current_session,
     deploy,
+    evaluate,
     evaluation,
     rollout,
     rollout_and_evaluation,
@@ -87,18 +88,6 @@ def setup(target: Any, **kwargs: Any) -> EnvSession:
     return _setup(target, **kwargs)
 
 
-def evaluate(*, session: EnvSession | None = None, **kwargs: Any):
-    return evaluation(session=session, **kwargs)
-
-
-def _sess_evaluate(self: EnvSession, **kwargs: Any):
-    return self.evaluation(**kwargs)
-
-
-if not hasattr(EnvSession, "evaluate"):
-    setattr(EnvSession, "evaluate", _sess_evaluate)
-
-
 __all__ = [
     "EnvSession",
     "setup",
@@ -110,4 +99,3 @@ __all__ = [
     "teardown",
     "current_session",
 ]
-

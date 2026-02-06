@@ -953,6 +953,21 @@ class EnvSession:
 
         return eval_res  # pragma: no cover
 
+    def evaluate(
+        self,
+        *,
+        mode: str = "smoke",
+        env_overrides: dict[str, str] | None = None,
+        artifacts_dir: Path | None = None,
+        repair_iters: int = 3,
+    ) -> EvaluationCallResult:
+        return self.evaluation(
+            mode=mode,
+            env_overrides=env_overrides,
+            artifacts_dir=artifacts_dir,
+            repair_iters=repair_iters,
+        )
+
     def rollout_and_evaluation(
         self,
         llm: str | Path | None = None,
@@ -1247,6 +1262,22 @@ def evaluation(
     repair_iters: int = 3,
 ) -> EvaluationCallResult:
     return _require_session(session).evaluation(
+        mode=mode,
+        env_overrides=env_overrides,
+        artifacts_dir=artifacts_dir,
+        repair_iters=repair_iters,
+    )
+
+
+def evaluate(
+    *,
+    session: EnvSession | None = None,
+    mode: str = "smoke",
+    env_overrides: dict[str, str] | None = None,
+    artifacts_dir: Path | None = None,
+    repair_iters: int = 3,
+) -> EvaluationCallResult:
+    return _require_session(session).evaluate(
         mode=mode,
         env_overrides=env_overrides,
         artifacts_dir=artifacts_dir,

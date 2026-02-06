@@ -178,16 +178,19 @@ def test_env_module_deploy_rollout_evaluation_smoke(tmp_path: Path):
     model_dir = tmp_path / "model_dir"
     model_dir.mkdir()
 
-    env.setup(repo)
+    sess = env.setup(repo)
     rollout_res = env.rollout(model_dir, require_samples=True)
     assert rollout_res.ok is True
     assert rollout_res.rollout_path is not None and rollout_res.rollout_path.exists()
 
-    eval_res = env.evaluation()
+    eval_res = env.evaluate()
     assert eval_res.ok is True
     assert eval_res.metrics is not None
     assert eval_res.metrics.get("ok") is True
     assert eval_res.metrics.get("score") == 1.0
+
+    eval_res2 = sess.evaluate()
+    assert eval_res2.ok is True
 
     assert env.teardown() is True
     assert not (repo / ".aider_fsm" / "server.pid").exists()

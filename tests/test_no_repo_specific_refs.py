@@ -28,3 +28,26 @@ def test_repo_has_no_rd_agent_specific_refs():
             offenders.append(str(p.relative_to(root)))
 
     assert offenders == []
+
+
+def test_runner_code_has_no_benchmark_identity_hardcoding():
+    """Ensure orchestration code does not branch on concrete benchmark identities."""
+    root = Path(__file__).resolve().parents[1]
+    banned = ("gsm8k", "evalplus", "miniwob", "miniwob-plusplus")
+
+    code_files: list[Path] = [root / "env.py", root / "fsm_runner.py"]
+    runner_dir = root / "runner"
+    if runner_dir.exists():
+        code_files.extend([p for p in runner_dir.rglob("*.py") if p.is_file()])
+
+    offenders: list[str] = []
+    for p in code_files:
+        try:
+            text = p.read_text(encoding="utf-8", errors="replace")
+        except Exception:
+            continue
+        lower = text.lower()
+        if any(token in lower for token in banned):
+            offenders.append(str(p.relative_to(root)))
+
+    assert offenders == []

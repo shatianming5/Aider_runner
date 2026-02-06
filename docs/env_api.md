@@ -7,13 +7,13 @@ import env
 
 sess = env.setup("https://github.com/<owner>/<repo>")   # or a HF dataset URL
 env.rollout("my-remote-model-name", session=sess)       # or a local HF model directory
-env.evaluation(session=sess)
+env.evaluate(session=sess)
 env.teardown(session=sess)
 ```
 
 目标（中文）：
 
-- 在**不写 benchmark-specific 硬编码**的前提下，让你可以在单个训练脚本里用 `setup/rollout/evaluation` 形式驱动任意 repo / benchmark / dataset。
+- 在**不写 benchmark-specific 硬编码**的前提下，让你可以在单个训练脚本里用 `setup/rollout/evaluate` 形式驱动任意 repo / benchmark / dataset。
 - 最大化 OpenCode 的自主性：缺少 `pipeline.yml` 时由 OpenCode scaffold 合同；评测/测试命令尽量来自目标仓库的 README / docs / CI workflows（而不是 runner 手写启动逻辑）。
 
 ---
@@ -48,7 +48,8 @@ Main calls:
     - Hugging Face dataset URL: `https://huggingface.co/datasets/<namespace>/<name>`
 - `env.deploy(llm, session=..., ...)`
 - `env.rollout(llm, session=..., ...)`
-- `env.evaluation(session=..., ...)`
+- `env.evaluate(session=..., ...)` (recommended)
+- `env.evaluation(session=..., ...)` (compat alias)
 - `env.rollout_and_evaluation(llm, session=..., ...)`
 - `env.teardown(session=..., ...)`
 
@@ -79,7 +80,7 @@ To support generic post-training, rollout should produce:
 The example single-file post-training loop consumes this contract:
 
 - `examples/train_rl_post_single.py`
-  - `--dry-run` exercises only `env.setup -> env.rollout -> env.evaluation`
+  - `--dry-run` exercises only `env.setup -> env.rollout -> env.evaluate`
   - training mode performs a minimal PPO-style update on `(prompt, completion, reward)` samples
 
 ### Rollout validation (optional)

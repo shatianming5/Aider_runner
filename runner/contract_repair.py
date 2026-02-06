@@ -118,7 +118,7 @@ def repair_contract(
             "  Instead, add `.aider_fsm/bootstrap.yml` to set up an isolated environment (e.g., venv) and install repo deps deterministically,\n"
             "  then ensure evaluation runs the hinted command within that environment.\n"
             "  IMPORTANT: bootstrap.yml is for **environment preparation only**. Do NOT run evaluation/test/benchmark commands in bootstrap\n"
-            "  (e.g. do NOT run `pytest`, `evalplus.evaluate`, `make test`, etc). Those belong in the stage scripts (especially evaluation.sh).\n"
+            "  (e.g. do NOT run `pytest`, benchmark CLI entrypoints, or `make test`). Those belong in the stage scripts (especially evaluation.sh).\n"
             "  IMPORTANT: if you create a venv, all installs MUST use the venv interpreter (`.aider_fsm/venv/bin/python -m pip ...`),\n"
             "  not the system `python3 -m pip ...` (do not pollute global/user site-packages).\n"
             "  Example bootstrap.yml pattern:\n"

@@ -70,20 +70,24 @@ You can also inject extra env vars into deploy/rollout/evaluation:
 python3 -m runner.opencode_run --repo . --env FOO=bar --env BAZ=qux
 ```
 
-### Optional: train + benchmark loop (0.5B-ish)
+### Optional: train + rollout/evaluation loop (0.5B-ish)
 
-If you want to run a simple train→(smoke)benchmark loop over a list of repos/URLs:
+If you want to run a simple train→(smoke)target loop over a list of URLs/paths:
 
 ```bash
 pip install -r requirements-ml.txt
 python3 -m runner.ml.train_and_benchmark \
   --base-model Qwen/Qwen2.5-0.5B-Instruct \
   --out-root /tmp/aider_train_runs \
-  --benchmarks-file benchmarks.txt \
+  --targets-file benchmarks.txt \
   --segments 1 \
   --steps-per-segment 8 \
-  --opencode-model opencode/gpt-5-nano
+  --opencode-model opencode/gpt-5-nano \
+  --require-samples
 ```
+
+This path uses Method-2 API calls internally for each target in order:
+`env.setup(...) -> session.rollout(...) -> session.evaluate(...) -> env.teardown(...)`.
 
 To use an existing OpenCode server:
 
@@ -189,7 +193,7 @@ If you want a single-file workflow like:
 - `import env`
 - `env.setup(url_or_path)`
 - `env.rollout(llm, ...)`
-- `env.evaluation(...)`
+- `env.evaluate(...)`
 
 See `docs/env_api.md`.
 
@@ -197,7 +201,8 @@ See `docs/env_api.md`.
 import env
 
 sess = env.setup("https://github.com/<owner>/<repo>")
-rollout_res, eval_res = env.rollout_and_evaluation("deepseek-v3.2", session=sess, mode="full")
+rollout_res = env.rollout("deepseek-v3.2", session=sess, mode="full")
+eval_res = env.evaluate(session=sess, mode="full")
 print(eval_res.metrics)  # dict written by the target contract
 print(eval_res.artifacts_dir)
 env.teardown(session=sess)
