@@ -1,17 +1,8 @@
 # OpenCode-FSM Runner
 
-A small, auditable **closed-loop executor** driven by an OpenCode agent (via the OpenCode server API).
-It is designed to integrate with agent projects for automation such as **benchmark deployment + evaluation** with hard guardrails.
+A small, auditable **benchmark-agnostic** library for deploying and validating target repos via a repo-owned contract (`pipeline.yml` + `.aider_fsm/`).
 
-Cycle:
-
-1) snapshot repo + `PLAN.md`  
-2) update plan (model may ONLY edit `PLAN.md`)  
-3) execute exactly one `Next` step (model may NOT edit `PLAN.md` or `pipeline.yml`)  
-4) verify via `pipeline.yml` (tests → deploy → rollout → evaluation → benchmark → metrics)  
-5) pass → mark Done; fail → fix or re-plan; optionally request `.aider_fsm/actions.yml`  
-
-中文：这是一个“计划-执行-验收”的闭环 runner，重点是可审计、可复现、可安全执行（适合作为 benchmark/deploy 验收框架）。
+中文：这是一个“目标仓库自带合同（pipeline.yml + .aider_fsm）”的通用执行与验收库。Runner 自身不写 benchmark-specific 逻辑。
 
 ## Install
 
@@ -32,70 +23,30 @@ pip install -r requirements.txt
 - Provider credentials depend on your model choice, e.g.:
   - `OPENAI_API_KEY` (for `openai/...`)
   - `OPENAI_API_BASE` (optional; for OpenAI-compatible endpoints)
-- Model selection:
-  - Recommended: use `--model provider/model` (see `opencode models`)
-  - Convenience: set `OPENAI_MODEL=<model_id>` (or `LITELLM_CHAT_MODEL`) and omit `--model`
+- OpenCode server auth (optional, if you use `opencode_url` in code):
+  - `OPENCODE_SERVER_USERNAME`
+  - `OPENCODE_SERVER_PASSWORD`
 
-## Run
+## Programmatic API (library)
 
-Run from the **target repo root** (Git repo recommended for revert guards):
+Only supported entrypoints:
 
-```bash
-python3 fsm_runner.py --repo . --goal "你的目标" --test-cmd "pytest -q" --model myproxy/deepseek-v3.2
+```python
+from runner import env as runner_env
+
+sess = runner_env.setup("https://github.com/<owner>/<repo>")
+sess.rollout(llm="deepseek-v3.2", mode="smoke", require_samples=True, repair_iters=0)
+res = sess.evaluate(mode="smoke", repair_iters=0)
+print(res.ok, res.metrics)
 ```
 
-Or:
+Notes:
 
-```bash
-python3 -m runner --repo . --goal "你的目标" --test-cmd "pytest -q" --model myproxy/deepseek-v3.2
-```
+- `sess.rollout()` requires an explicit `llm=...` (remote model id/name, or a local model dir path).
+- `sess.evaluate()` does **not** accept `llm`; it reuses the session's configured LLM from `rollout()`.
+- `sess.evaluate()` performs a best-effort teardown automatically at the end (no public teardown API).
 
-### One-shot deploy → rollout → evaluation (no benchmark-specific code)
-
-If you want a minimal “just run it” loop (scaffold contract if missing, then deploy + rollout + evaluation):
-
-```bash
-python3 -m runner.opencode_run --repo . --model myproxy/deepseek-v3.2
-```
-
-To run benchmarks/eval against a locally trained HF model directory (e.g. exported by `python -m runner.ml.train_lora`):
-
-```bash
-python3 -m runner.opencode_run --repo . --trained-model-dir /abs/path/to/model_dir --model myproxy/deepseek-v3.2
-```
-
-You can also inject extra env vars into deploy/rollout/evaluation:
-
-```bash
-python3 -m runner.opencode_run --repo . --env FOO=bar --env BAZ=qux
-```
-
-### Optional: train + rollout/evaluation loop (0.5B-ish)
-
-If you want to run a simple train→(smoke)target loop over a list of URLs/paths:
-
-```bash
-pip install -r requirements-ml.txt
-python3 -m runner.ml.train_and_benchmark \
-  --base-model Qwen/Qwen2.5-0.5B-Instruct \
-  --out-root /data/tiansha/aider_train_runs \
-  --targets-file benchmarks.txt \
-  --segments 1 \
-  --steps-per-segment 8 \
-  --opencode-model opencode/gpt-5-nano \
-  --require-samples
-```
-
-This path uses Method-2 API calls internally for each target in order:
-`env.setup(...) -> session.rollout(...) -> session.evaluate(...) -> env.teardown(...)`.
-
-To use an existing OpenCode server:
-
-```bash
-OPENCODE_SERVER_PASSWORD=... python3 -m runner.opencode_run --repo . --opencode-url http://127.0.0.1:4096
-```
-
-### Use an existing OpenCode server
+## OpenCode server (optional)
 
 Start a server in your target repo root:
 
@@ -103,146 +54,31 @@ Start a server in your target repo root:
 OPENCODE_SERVER_PASSWORD=... opencode serve --hostname 127.0.0.1 --port 4096
 ```
 
-Then run the runner with:
+Then point `setup()` at it:
 
-```bash
-OPENCODE_SERVER_PASSWORD=... python3 -m runner --repo . --opencode-url http://127.0.0.1:4096
+```python
+from runner import env as runner_env
+
+sess = runner_env.setup(
+    "https://github.com/<owner>/<repo>",
+    opencode_url="http://127.0.0.1:4096",
+    opencode_model="opencode/gpt-5-nano",
+)
 ```
-
-### Run a remote repo (auto-clone)
-
-You can point `--repo` at a git URL; the runner will clone it to `/data/tiansha/aider_fsm_targets/` by default when writable (otherwise it falls back to `/tmp/aider_fsm_targets/`):
-
-```bash
-python3 -m runner --repo https://github.com/<owner>/<repo> --goal "运行 smoke benchmark" --test-cmd "python -V"
-```
-
-Use `--clone-dir` to choose a different clone location. The runner will also load `.env` by default (disable with `--env-file ''`).
-
-If the remote repo includes a root `pipeline.yml`, the runner will auto-load it. To require a pipeline (recommended for “contract runs”),
-use `--require-pipeline`.
-
-If a remote repo does **not** include `pipeline.yml`, the runner will auto-scaffold a minimal contract via OpenCode
-(`pipeline.yml` + `.aider_fsm/`) so `--repo <url>` can run end-to-end. Disable with `--scaffold-contract off`.
-
-Control OpenCode bash permissions during scaffolding via `--scaffold-opencode-bash` (default: `full`).
-Scaffold strictness is controlled by `--strict-opencode` (default: on):
-
-- `--strict-opencode`: runner will not prewrite fallback contract files; only OpenCode/repo-preexisting files are accepted.
-- `--no-strict-opencode`: runner may seed `.aider_fsm/stages/*.sh` and fallback-write `pipeline.yml`.
-
-Scaffold/repair provenance files are written to artifacts as:
-
-- `scaffold_provenance.json`
-- `repair_provenance.json`
-
-If `git clone` is blocked (common in restricted networks), GitHub HTTPS/SSH URLs will fall back to downloading a GitHub archive ZIP
-(`main` then `master`) and extracting it locally.
-
-Hugging Face dataset URLs are also supported (downloaded via the HF REST API without `git`):
-
-- `https://huggingface.co/datasets/<namespace>/<name>`
-- If gated/private, set `HF_TOKEN` (or `HUGGINGFACEHUB_API_TOKEN`)
-- Size limits: `AIDER_FSM_HF_MAX_TOTAL_BYTES` (default 512MB), `AIDER_FSM_HF_MAX_FILE_BYTES` (default 256MB)
-
-### Deploy + benchmark (pipeline.yml)
-
-Add a `pipeline.yml` to the target repo to include deploy/benchmark/metrics in the verification loop:
-
-```bash
-python3 fsm_runner.py --repo . --pipeline pipeline.yml
-```
-
-Notes:
-
-- `pipeline.yml` is a **human-owned contract**. The runner will revert any model edits to it.
-- Artifacts are written under `.aider_fsm/artifacts/<run_id>/` (override via `--artifacts-dir`).
-- If you need interactive auth, set `pipeline.auth.interactive: true` and run with `--unattended guided`.
-- `rollout` is an optional stage for post-training RL rollouts/trajectories (see `docs/pipeline_spec.md`).
-- `evaluation` is an optional stage for evaluation/benchmark runs + metrics validation (see `docs/pipeline_spec.md`).
-
-Examples:
-
-- `examples/pipeline.example.yml`
-- `examples/pipeline.benchmark_skeleton.yml`
-
-### Repo-owned environment bootstrap (bootstrap.yml)
-
-If your target repo needs a reproducible environment setup (e.g. venv + deps), add `.aider_fsm/bootstrap.yml`
-(see `docs/bootstrap_spec.md` and `examples/bootstrap.example.yml`). The runner executes it before verification.
-
-### Environment/tooling bootstrap (actions.yml)
-
-If verification fails due to missing tools/config/auth, the model may write `.aider_fsm/actions.yml`.
-The runner executes it (subject to security policy) and records artifacts, then deletes the file.
-
-See `examples/actions.example.yml`.
 
 ## Docs
 
 - `docs/overview.md`
 - `docs/env_api.md`
-- `docs/verification_suite.md`
 - `docs/pipeline_spec.md`
 - `docs/bootstrap_spec.md`
 - `docs/metrics_schema.md`
 - `docs/security_model.md`
 - `docs/integration.md`
+- `docs/verification.md`
 
 ## Tests
 
 ```bash
 pytest -q
-```
-
-## Programmatic `env` API (single-file training scripts)
-
-If you want a single-file workflow like:
-
-- `from runner import env as runner_env`
-- `sess = runner_env.setup(url_or_path)`
-- `sess.rollout(llm, ...)`
-- `sess.evaluate(...)` (note: `evaluate()` reuses the session's configured `llm`)
-
-See `docs/env_api.md`.
-(`import env` also works as a compatibility wrapper, but `runner.env` is the primary library entrypoint.)
-
-```python
-from runner import env as runner_env
-
-sess = runner_env.setup("https://github.com/<owner>/<repo>")
-rollout_res = sess.rollout("deepseek-v3.2", mode="full")
-eval_res = sess.evaluate(mode="full")
-print(eval_res.metrics)  # dict written by the target contract
-print(eval_res.artifacts_dir)
-sess.teardown()
-```
-
-For end-to-end verification across multiple targets (URL/path) without benchmark-specific runner code:
-
-```bash
-python3 examples/verify_suite_single_file.py \
-  --targets https://huggingface.co/datasets/openai/gsm8k \
-  --targets https://github.com/evalplus/evalplus \
-  --targets https://github.com/Farama-Foundation/miniwob-plusplus \
-  --llm deepseek-v3.2 \
-  --eval-mode full
-```
-
-Complete regression is recommended as a 2x2 matrix:
-
-- smoke + strict: `--eval-mode smoke --strict-opencode`
-- full + strict: `--eval-mode full --strict-opencode`
-- smoke + non-strict: `--eval-mode smoke --no-strict-opencode`
-- full + non-strict: `--eval-mode full --no-strict-opencode`
-
-If a “full” evaluation command legitimately takes a long time, raise caps via env injection:
-
-```bash
-python3 examples/verify_suite_single_file.py \
-  --targets https://github.com/evalplus/evalplus \
-  --llm deepseek-v3.2 \
-  --eval-mode full \
-  --env AIDER_FSM_MAX_CMD_SECONDS=14400 \
-  --env AIDER_FSM_HINT_TIMEOUT_SECONDS=14400
 ```

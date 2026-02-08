@@ -6,5 +6,6 @@
 .venv*/
 __pycache__/
 .pytest_cache/
+.rd_queue/
 *.pyc
 .DS_Store

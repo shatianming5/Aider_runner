@@ -1,7 +1,5 @@
 """OpenCode-FSM runner core package.
 
-This package contains a small, auditable loop that:
-- keeps a machine-parseable PLAN.md
-- executes exactly one Next step
-- verifies via tests/deploy/benchmark pipeline
+Library-first API for running a repo-owned verification contract (`pipeline.yml` + `.aider_fsm/`).
+Public usage is intentionally minimal: `setup()` -> `sess.rollout(llm=...)` -> `sess.evaluate()`.
 """

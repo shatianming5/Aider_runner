@@ -1,37 +1,15 @@
 from __future__ import annotations
 
-import json
 import shlex
 import sys
 from pathlib import Path
 from types import SimpleNamespace
 
-from runner import cli as runner_cli
 from runner import env as runner_env
 from runner import env_local as runner_env_local
 from runner.agent_client import AgentResult
 from runner.env_local import EnvHandle
 from runner.pipeline_spec import PipelineSpec
-from runner.runner import RunnerConfig, run
-
-
-def _ok_cmd() -> str:
-    py = shlex.quote(sys.executable)
-    return f'{py} -c "import sys; sys.exit(0)"'
-
-
-def _latest_run_dir(artifacts_base: Path) -> Path:
-    runs = sorted([p for p in artifacts_base.iterdir() if p.is_dir()])
-    assert runs
-    return runs[-1]
-
-
-class _NoWriteAgent:
-    def run(self, _text: str, *, fsm_state: str, iter_idx: int, purpose: str) -> AgentResult:
-        return AgentResult(assistant_text=f"noop ({purpose})")
-
-    def close(self) -> None:
-        return
 
 
 def test_env_setup_strict_disables_seed_and_fallback(tmp_path: Path, monkeypatch) -> None:
@@ -61,85 +39,6 @@ def test_env_setup_strict_disables_seed_and_fallback(tmp_path: Path, monkeypatch
     runner_env.setup("dummy-target", strict_opencode=False)
     assert calls[-1]["seed_stage_skeleton"] is True
     assert calls[-1]["write_fallback_pipeline_yml"] is True
-
-
-def test_runner_strict_opencode_never_writes_fallback(tmp_path: Path) -> None:
-    repo = tmp_path / "repo_strict"
-    repo.mkdir()
-    artifacts_base = repo / ".aider_fsm" / "artifacts"
-    ok_cmd = _ok_cmd()
-    cfg = RunnerConfig(
-        repo=repo,
-        goal="g",
-        model="openai/gpt-4o-mini",
-        plan_rel="PLAN.md",
-        pipeline_abs=None,
-        pipeline_rel=None,
-        pipeline=None,
-        tests_cmds=[ok_cmd],
-        effective_test_cmd=ok_cmd,
-        artifacts_base=artifacts_base,
-        seed_files=[],
-        max_iters=1,
-        max_fix=1,
-        unattended="strict",
-        preflight_only=True,
-        opencode_url="",
-        opencode_timeout_seconds=1,
-        opencode_bash="restricted",
-        require_pipeline=True,
-        scaffold_contract="opencode",
-        strict_opencode=True,
-    )
-
-    rc = run(cfg, agent=_NoWriteAgent())
-    assert rc == 2
-
-    run_dir = _latest_run_dir(artifacts_base)
-    assert not (run_dir / "scaffold_fallback_used.txt").exists()
-    prov = json.loads((run_dir / "scaffold_provenance.json").read_text(encoding="utf-8"))
-    assert prov.get("strict_opencode") is True
-    assert prov.get("runner_written_paths") == []
-
-
-def test_runner_non_strict_opencode_never_writes_runner_fallback(tmp_path: Path) -> None:
-    repo = tmp_path / "repo_non_strict"
-    repo.mkdir()
-    artifacts_base = repo / ".aider_fsm" / "artifacts"
-    ok_cmd = _ok_cmd()
-    cfg = RunnerConfig(
-        repo=repo,
-        goal="g",
-        model="openai/gpt-4o-mini",
-        plan_rel="PLAN.md",
-        pipeline_abs=None,
-        pipeline_rel=None,
-        pipeline=None,
-        tests_cmds=[ok_cmd],
-        effective_test_cmd=ok_cmd,
-        artifacts_base=artifacts_base,
-        seed_files=[],
-        max_iters=1,
-        max_fix=1,
-        unattended="strict",
-        preflight_only=True,
-        opencode_url="",
-        opencode_timeout_seconds=1,
-        opencode_bash="restricted",
-        require_pipeline=True,
-        scaffold_contract="opencode",
-        strict_opencode=False,
-    )
-
-    rc = run(cfg, agent=_NoWriteAgent())
-    assert rc == 2
-
-    run_dir = _latest_run_dir(artifacts_base)
-    assert not (run_dir / "scaffold_fallback_used.txt").exists()
-    prov = json.loads((run_dir / "scaffold_provenance.json").read_text(encoding="utf-8"))
-    assert prov.get("strict_opencode") is False
-    assert list(prov.get("runner_written_paths") or []) == []
-
 
 def _write_valid_contract(repo: Path) -> None:
     stages = repo / ".aider_fsm" / "stages"
@@ -246,30 +145,3 @@ def test_open_env_scaffold_retries_and_succeeds_without_runner_fallback(tmp_path
     )
     assert handle.pipeline_path.exists()
     assert agent.calls >= 2
-
-
-def test_cli_passes_strict_opencode_flag(tmp_path: Path, monkeypatch) -> None:
-    repo = tmp_path / "repo_cli"
-    repo.mkdir()
-    (repo / "pipeline.yml").write_text("version: 1\n", encoding="utf-8")
-
-    monkeypatch.setattr(runner_cli, "load_dotenv", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(runner_cli, "_resolve_model", lambda _raw: "openai/gpt-4o-mini")
-    monkeypatch.setattr(
-        runner_cli,
-        "prepare_repo",
-        lambda _repo, clones_dir=None: SimpleNamespace(repo=repo, cloned_from=""),
-    )
-
-    captured: dict[str, object] = {}
-
-    def _fake_run(cfg) -> int:
-        captured["cfg"] = cfg
-        return 0
-
-    monkeypatch.setattr(runner_cli, "run", _fake_run)
-    rc = runner_cli.main(["--repo", str(repo), "--no-strict-opencode", "--preflight-only"])
-    assert rc == 0
-    cfg = captured.get("cfg")
-    assert cfg is not None
-    assert getattr(cfg, "strict_opencode") is False

@@ -200,8 +200,6 @@ def make_scaffold_contract_prompt(
         "  - Generic evaluation (runs doc/CI hints + writes hints_used.json + metrics.json): `$AIDER_FSM_PYTHON \"$AIDER_FSM_RUNNER_ROOT/runner/generic_evaluation.py\"`\n"
         "  IMPORTANT: these helper scripts DO NOT take CLI flags; they read inputs from env vars only. Do NOT pass `--runtime-env`/`--metrics-json` etc.\n"
         "  IMPORTANT: do NOT reference `$AIDER_FSM_RUNNER_ROOT/.aider_fsm/generic_rollout.py` or `$AIDER_FSM_RUNNER_ROOT/.aider_fsm/generic_evaluation.py` (wrong path).\n"
-        "  - Start local server (no hardcoded ports): `RUNTIME_ENV=${AIDER_RUNTIME_ENV_PATH:-.aider_fsm/runtime_env.json}; $AIDER_FSM_PYTHON -m runner.ml.serve_openai_compat start --backend hf --model-dir \"$AIDER_TRAINED_MODEL_DIR\" --host 127.0.0.1 --port 0 --runtime-env-out \"$RUNTIME_ENV\" --pid-file .aider_fsm/server.pid --log-file \"$AIDER_FSM_ARTIFACTS_DIR/server.log\"`\n"
-        "  - Stop local server:  `$AIDER_FSM_PYTHON -m runner.ml.serve_openai_compat stop --pid-file .aider_fsm/server.pid`\n"
         "- It is OK to set up an isolated environment via `.aider_fsm/bootstrap.yml` (e.g., venv + requirements) if required and deterministic.\n"
         "- If you use docker/compose, write all docker commands in `.aider_fsm/stages/*.sh` and record how to stop them in `deploy_teardown.sh`.\n"
         "- Keep workloads bounded; use small smoke settings when possible.\n"

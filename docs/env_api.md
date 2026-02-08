@@ -1,34 +1,22 @@
-# Programmatic `env` API (single-file training scripts)
+# Library API: `setup()` → `rollout()` → `evaluate()`
 
-This repo exposes a small **programmatic API** designed for “all code in one file” training/eval loops:
+This repo exposes a small **programmatic API** designed for driving target repos end-to-end without benchmark-specific runner code.
 
-Recommended library-style usage (import `runner.env` as `runner_env`):
+Recommended (and only supported) library-style usage (import `runner.env` as `runner_env`):
 
 ```python
 from runner import env as runner_env
 
 sess = runner_env.setup("https://github.com/<owner>/<repo>")  # or a HF dataset URL
-sess.rollout("my-remote-model-name", mode="smoke")            # or a local HF model directory
-sess.evaluate(mode="smoke")                                   # uses the session's configured llm
-sess.teardown()
-```
-
-Compatibility wrapper (top-level `env.py`):
-
-```python
-import env
-
-sess = env.setup("https://github.com/<owner>/<repo>")   # or a HF dataset URL
-env.rollout("my-remote-model-name", session=sess)       # or a local HF model directory
-env.evaluate(session=sess)
-env.teardown(session=sess)
+sess.rollout(llm="my-remote-model-name", mode="smoke")        # or a local HF model directory path
+sess.evaluate(mode="smoke")                                   # uses the session's configured llm; auto-teardown
 ```
 
 目标（中文）：
 
 - 在**不写 benchmark-specific 硬编码**的前提下，让你可以在单个训练脚本里用 `setup/rollout/evaluate` 形式驱动任意 repo / benchmark / dataset。
 - 最大化 OpenCode 的自主性：缺少 `pipeline.yml` 时由 OpenCode scaffold 合同；评测/测试命令尽量来自目标仓库的 README / docs / CI workflows（而不是 runner 手写启动逻辑）。
-- 作为库（library）使用：支持 `from runner import env as runner_env`，并通过 `sess = runner_env.setup(url)` → `sess.rollout(llm)` → `sess.evaluate()` 驱动闭环（`runner_env` 只是一个 import alias）。
+- 作为库（library）使用（硬需求）：只支持 `from runner import env as runner_env`，并通过 `sess = runner_env.setup(url)` → `sess.rollout(llm=...)` → `sess.evaluate()` 驱动闭环（`runner_env` 只是一个 import alias）。
 
 ---
 
@@ -42,7 +30,7 @@ The runner itself stays benchmark-agnostic. The *target* repo is responsible for
   - `.aider_fsm/rollout.json` + `rollout.json.paths.samples_jsonl`
   - `.aider_fsm/metrics.json` (must include `ok` and `score` when required)
 
-If `pipeline.yml` is missing, `env.setup()` will scaffold a minimal contract via OpenCode:
+If `pipeline.yml` is missing, `runner_env.setup()` will scaffold a minimal contract via OpenCode:
 
 - `strict_opencode=True` (default): runner does **not** prewrite/patch contract files; success requires OpenCode (or repo-preexisting files) to produce a valid contract.
 - `strict_opencode=False` (deprecated): kept for compatibility only. The runner still does **not** prewrite/seed/fallback-write contract files.
@@ -58,32 +46,17 @@ See: `docs/pipeline_spec.md`, `docs/metrics_schema.md`.
 
 ## Public API
 
-Top-level module: `env.py` (re-exports from `runner.env`).
+Only supported calls:
 
-Main calls:
+- `sess = runner_env.setup(target, ...) -> EnvSession`
+- `sess.rollout(llm=..., ...)`
+- `sess.evaluate(...)`
 
-- `env.setup(target, ...) -> EnvSession`
-  - `target` can be:
-    - local path
-    - git URL / `owner/repo`
-    - Hugging Face dataset URL: `https://huggingface.co/datasets/<namespace>/<name>`
-- `env.deploy(llm, session=..., ...)`
-- `env.rollout(llm, session=..., ...)`
-- `env.evaluate(session=..., ...)` (recommended)
-- `env.evaluation(session=..., ...)` (compat alias)
-- `env.rollout_and_evaluation(llm, session=..., ...)`
-- `env.teardown(session=..., ...)`
+Notes:
 
-### Library usage: call methods on `EnvSession`
-
-If you prefer an object-oriented library style, use:
-
-- `from runner import env as runner_env`
-- then call methods on the returned `EnvSession`:
-  - `sess.deploy(llm, ...)`: sets the LLM context (local vs remote) and prepares runtime env.
-  - `sess.rollout(llm=None, ...)`: if `llm` is provided, it becomes the session's active LLM; otherwise it reuses the existing one.
-  - `sess.evaluate(...)` / `sess.evaluation(...)`: **does not accept `llm`**; it reuses the session's configured LLM.
-    - If you want a single call that sets `llm` and runs both stages, use `sess.rollout_and_evaluation(llm, ...)`.
+- `rollout()` requires an explicit `llm=...`.
+- `evaluate()` does **not** accept `llm`; it reuses the session's configured LLM from `rollout()`.
+- `evaluate()` runs a best-effort teardown automatically at the end (no public teardown API).
 
 ### `llm` parameter (local vs remote)
 
@@ -108,12 +81,6 @@ To support generic post-training, rollout should produce:
   - `prompt` (string)
   - `completion` (string)
   - `reward` (number)
-
-The example single-file post-training loop consumes this contract:
-
-- `examples/train_rl_post_single.py`
-  - `--dry-run` exercises only `env.setup -> env.rollout -> env.evaluate`
-  - training mode performs a minimal PPO-style update on `(prompt, completion, reward)` samples
 
 ### Rollout validation (optional)
 
@@ -186,28 +153,4 @@ Token cap (optional):
 ---
 
 ## Verification suite (single file)
-
-Use the generic suite to validate multiple targets end-to-end:
-
-- `examples/verify_suite_single_file.py`
-
-Example (three targets, “full” mode):
-
-```bash
-python3 examples/verify_suite_single_file.py \
-  --targets https://huggingface.co/datasets/openai/gsm8k \
-  --targets https://github.com/evalplus/evalplus \
-  --targets https://github.com/Farama-Foundation/miniwob-plusplus \
-  --llm deepseek-v3.2 \
-  --eval-mode full \
-  --require-samples \
-  --repair-iters 0 \
-  --no-strict-opencode \
-  --env AIDER_EVAL_LIMIT=1319 \
-  --env AIDER_FSM_PREFER_OFFLINE_HINTS=1 \
-  --env AIDER_FSM_HINT_TIMEOUT_SECONDS=7200 \
-  --env AIDER_FSM_MAX_CMD_SECONDS=14400 \
-  --env AIDER_FSM_HINT_MAX_ATTEMPTS=1
-```
-
-This is intended as a “full pipeline validation” harness; the numeric score depends on what the target contract/hints produce.
+See `docs/verification.md` for the smoke/full-lite verification commands and evidence checklist.

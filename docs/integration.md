@@ -30,10 +30,14 @@ Keep the metrics small and stable; write full raw logs into artifacts.
 
 ## Running
 
-From the target repo root:
+Use the library API:
 
-```bash
-python3 /path/to/OpenCode-FSM-Runner/fsm_runner.py --repo . --pipeline pipeline.yml --goal "Run benchmark" --model openai/gpt-4o-mini
+```python
+from runner import env as runner_env
+
+sess = runner_env.setup("/abs/path/to/target_repo")  # or a repo URL
+sess.rollout(llm="deepseek-v3.2", mode="smoke", require_samples=True, repair_iters=0)
+sess.evaluate(mode="smoke", repair_iters=0)
 ```
 
 Artifacts are written under `.aider_fsm/artifacts/<run_id>/`.
@@ -41,4 +45,4 @@ Artifacts are written under `.aider_fsm/artifacts/<run_id>/`.
 ## Optional: programmatic usage
 
 If you want to drive `setup/rollout/evaluation` from a single Python training script (no benchmark-specific runner code),
-see `docs/env_api.md` (recommended: `from runner import env as runner_env`; compatibility wrapper: `import env`).
+see `docs/env_api.md` (recommended: `from runner import env as runner_env`).

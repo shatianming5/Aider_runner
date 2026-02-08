@@ -35,7 +35,7 @@ def test_runner_code_has_no_benchmark_identity_hardcoding():
     root = Path(__file__).resolve().parents[1]
     banned = ("gsm8k", "evalplus", "miniwob", "miniwob-plusplus")
 
-    code_files: list[Path] = [root / "env.py", root / "fsm_runner.py"]
+    code_files: list[Path] = []
     runner_dir = root / "runner"
     if runner_dir.exists():
         code_files.extend([p for p in runner_dir.rglob("*.py") if p.is_file()])

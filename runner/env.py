@@ -30,6 +30,8 @@ from .env_local import (
     with_runtime_env_path,
 )
 
+__all__ = ["EnvSession", "setup"]
+
 
 def _now_run_id() -> str:
     return time.strftime("%Y%m%d_%H%M%S", time.localtime())
@@ -415,7 +417,7 @@ class EnvSession:
     """A small programmatic wrapper for `runner.env_local`.
 
     中文说明：
-    - 含义：提供你训练脚本需要的 `setup/deploy/rollout/evaluation/teardown` 调用形态。
+    - 含义：提供最小闭环三入口：`setup()` -> `sess.rollout(llm=...)` -> `sess.evaluate()`
     - 内容：只负责 orchestration 与自动 repair；不写任何 benchmark-specific 逻辑。
     """
 
@@ -518,131 +520,6 @@ class EnvSession:
         if self.llm_kind == "local_hf":
             overrides.setdefault("OPENAI_API_KEY", str(overrides.get("OPENAI_API_KEY") or "local"))
 
-    def _runner_root(self) -> Path:
-        return Path(__file__).resolve().parents[1]
-
-    def _env_with_runner_pythonpath(self, overrides: dict[str, str]) -> dict[str, str]:
-        env2 = dict(os.environ)
-        env2.update({str(k): str(v) for k, v in (overrides or {}).items()})
-        runner_root = str(self._runner_root())
-        existing_pp = str(env2.get("PYTHONPATH") or "")
-        parts = [p for p in existing_pp.split(os.pathsep) if p]
-        if runner_root not in parts:
-            env2["PYTHONPATH"] = runner_root + (os.pathsep + existing_pp if existing_pp else "")
-        return env2
-
-    def _best_effort_stop_local_server(self, *, overrides: dict[str, str]) -> None:
-        pid_file = (self.env.repo / ".aider_fsm" / "server.pid").resolve()
-        if not pid_file.exists():
-            return
-        env2 = self._env_with_runner_pythonpath(overrides)
-        try:
-            subprocess.run(
-                [
-                    sys.executable,
-                    "-m",
-                    "runner.ml.serve_openai_compat",
-                    "stop",
-                    "--pid-file",
-                    str(pid_file),
-                    "--timeout-seconds",
-                    "10",
-                ],
-                check=False,
-                capture_output=True,
-                text=True,
-                cwd=str(self.env.repo),
-                env=env2,
-                timeout=20,
-            )
-        except Exception:
-            return
-
-    def _ensure_local_openai_service(self, *, artifacts_dir: Path, overrides: dict[str, str]) -> None:
-        """Ensure a local OpenAI-compatible base_url exists for local_hf runs.
-
-        Some scaffolded contracts may write runtime_env.json without starting a server.
-        For local_hf, the runner can start its built-in OpenAI-compatible server (no hardcoded ports)
-        and update runtime_env.json so downstream rollout/evaluation commands can use OPENAI_API_BASE.
-        """
-        if self.llm_kind != "local_hf":
-            return
-        if self.runtime_env_path is None:
-            return
-        # Only treat local_hf as "ready" if runtime_env.json looks like a started local
-        # OpenAI-compatible service (i.e., `runner.ml.serve_openai_compat`).
-        obj = _read_json_object(Path(self.runtime_env_path))
-        svc_base = ""
-        inf_type = ""
-        if isinstance(obj, dict):
-            svc = obj.get("service")
-            if isinstance(svc, dict):
-                svc_base = str(svc.get("base_url") or "").strip()
-            inf = obj.get("inference")
-            if isinstance(inf, dict):
-                inf_type = str(inf.get("type") or "").strip()
-        if svc_base and inf_type.strip().lower() == "openai_compat":
-            try:
-                from urllib.parse import urlparse
-
-                u = urlparse(svc_base)
-                if u.scheme in ("http", "https") and u.hostname and u.port:
-                    return
-            except Exception:
-                pass
-        if self.trained_model_dir is None:
-            raise ValueError("missing_llm: call deploy/rollout with llm=model_dir first")
-
-        artifacts_dir = Path(artifacts_dir).resolve()
-        artifacts_dir.mkdir(parents=True, exist_ok=True)
-        runtime_env_out = Path(self.runtime_env_path).expanduser().resolve()
-        pid_file = (self.env.repo / ".aider_fsm" / "server.pid").resolve()
-        log_file = (artifacts_dir / "server.log").resolve()
-
-        env2 = self._env_with_runner_pythonpath(overrides)
-        # Ensure we don't leave orphan servers around if called multiple times.
-        self._best_effort_stop_local_server(overrides=overrides)
-
-        try:
-            res = subprocess.run(
-                [
-                    sys.executable,
-                    "-m",
-                    "runner.ml.serve_openai_compat",
-                    "start",
-                    "--backend",
-                    "hf",
-                    "--model-dir",
-                    str(self.trained_model_dir),
-                    "--host",
-                    "127.0.0.1",
-                    "--port",
-                    "0",
-                    "--runtime-env-out",
-                    str(runtime_env_out),
-                    "--pid-file",
-                    str(pid_file),
-                    "--log-file",
-                    str(log_file),
-                    "--startup-timeout",
-                    "60",
-                ],
-                check=False,
-                capture_output=True,
-                text=True,
-                cwd=str(self.env.repo),
-                env=env2,
-                timeout=120,
-            )
-        except Exception as e:
-            raise RuntimeError(f"local_openai_service_start_failed: {e}") from e
-
-        if int(res.returncode) != 0:
-            tail = (res.stderr or res.stdout or "").strip()
-            if len(tail) > 2000:
-                tail = tail[-2000:]
-            raise RuntimeError(f"local_openai_service_start_failed: rc={res.returncode} tail={tail}")
-
     def _maybe_teardown(self, *, run_root: Path, overrides: dict[str, str]) -> None:
         try:
             _deploy_teardown(
@@ -653,75 +530,10 @@ class EnvSession:
             )
         except Exception:
             pass
-        self._best_effort_stop_local_server(overrides=overrides)
-
-    def deploy(
-        self,
-        llm: str | Path,
-        *,
-        mode: str = "smoke",
-        env_overrides: dict[str, str] | None = None,
-        artifacts_dir: Path | None = None,
-        repair_iters: int = 3,
-    ) -> DeployCallResult:
-        self._set_llm(llm)
-        run_root = _resolve_run_root(self.env.repo, run_id=self.run_id, artifacts_dir=artifacts_dir)
-
-        for attempt in range(int(max(0, repair_iters)) + 1):
-            deploy_dir = (run_root / f"deploy_attempt_{attempt+1:02d}").resolve()
-            roll_eval_dir = (run_root / f"rollout_evaluation_attempt_{attempt+1:02d}").resolve()
-            overrides = self._base_overrides(mode=mode, extra=env_overrides)
-            self._apply_llm_overrides(overrides)
-
-            res = _deploy(
-                self.env,
-                artifacts_dir=deploy_dir,
-                env_overrides=overrides,
-                unattended=str(self.unattended or "strict"),
-                run_bootstrap_first=True,
-            )
-            if res.ok:
-                self.runtime_env_path = res.runtime_env_path or (self.env.repo / ".aider_fsm" / "runtime_env.json").resolve()
-                overrides2 = dict(overrides)
-                overrides2.update(with_runtime_env_path(self.runtime_env_path))
-                self._ensure_local_openai_service(artifacts_dir=deploy_dir, overrides=overrides2)
-                rt = _read_json_object(self.runtime_env_path) or res.runtime_env
-                return DeployCallResult(
-                    ok=bool(res.ok),
-                    artifacts_dir=res.artifacts_dir,
-                    runtime_env_path=self.runtime_env_path,
-                    runtime_env=rt if isinstance(rt, dict) else res.runtime_env,
-                    verify=res.verify,
-                )
-
-            if attempt >= int(max(0, repair_iters)):
-                return res
-
-            repair_contract(
-                repo=self.env.repo,
-                model=str(self.opencode_repair_model or self.opencode_model or "").strip(),
-                opencode_url=str(self.opencode_url or ""),
-                unattended=str(self.unattended or "strict"),
-                artifacts_dir=(run_root / f"repair_{attempt+1:02d}").resolve(),
-                failed_stage=str(getattr(res.verify, "failed_stage", "") or "deploy"),
-                deploy_artifacts_dir=deploy_dir,
-                rollout_eval_artifacts_dir=roll_eval_dir,
-                llm_kind=str(self.llm_kind or ""),
-                llm_model=str(self.llm_model or ""),
-                command_hints=self.command_hints,
-                extra_context="",
-                timeout_seconds=int(self.opencode_timeout_seconds or 300),
-                retry_attempts=int(self.opencode_retry_attempts or 0),
-                retry_backoff_seconds=float(self.opencode_retry_backoff_seconds or 0.0),
-                context_length=(int(self.opencode_context_length) if self.opencode_context_length is not None else None),
-                max_prompt_chars=(int(self.opencode_max_prompt_chars) if self.opencode_max_prompt_chars is not None else None),
-            )
-
-        return res  # pragma: no cover
 
     def rollout(
         self,
-        llm: str | Path | None = None,
+        llm: str | Path,
         *,
         mode: str = "smoke",
         require_samples: bool = False,
@@ -729,10 +541,7 @@ class EnvSession:
         artifacts_dir: Path | None = None,
         repair_iters: int = 3,
     ) -> RolloutCallResult:
-        if llm is not None:
-            self._set_llm(llm)
-        if not self.llm_kind:
-            raise ValueError("missing_llm: call deploy/rollout with llm=model_dir|model_id first")
+        self._set_llm(llm)
 
         run_root = _resolve_run_root(self.env.repo, run_id=self.run_id, artifacts_dir=artifacts_dir)
 
@@ -777,7 +586,6 @@ class EnvSession:
 
             self.runtime_env_path = deploy_res.runtime_env_path or (self.env.repo / ".aider_fsm" / "runtime_env.json").resolve()
             overrides.update(with_runtime_env_path(self.runtime_env_path))
-            self._ensure_local_openai_service(artifacts_dir=deploy_dir, overrides=overrides)
             self._apply_runtime_env_inference_overrides(overrides)
 
             rollout_res = _rollout(
@@ -841,7 +649,7 @@ class EnvSession:
 
         return rollout_res  # pragma: no cover
 
-    def evaluation(
+    def _evaluation(
         self,
         *,
         mode: str = "smoke",
@@ -866,7 +674,6 @@ class EnvSession:
             if self.runtime_env_path is not None and attempt == 0:
                 # Fast path: reuse the existing deploy and only run evaluation.
                 overrides.update(with_runtime_env_path(self.runtime_env_path))
-                self._ensure_local_openai_service(artifacts_dir=eval_dir, overrides=overrides)
                 self._apply_runtime_env_inference_overrides(overrides)
                 eval_res = _evaluate(
                     self.env,
@@ -944,7 +751,6 @@ class EnvSession:
 
                 self.runtime_env_path = deploy_res.runtime_env_path or (self.env.repo / ".aider_fsm" / "runtime_env.json").resolve()
                 overrides.update(with_runtime_env_path(self.runtime_env_path))
-                self._ensure_local_openai_service(artifacts_dir=deploy_dir, overrides=overrides)
                 self._apply_runtime_env_inference_overrides(overrides)
                 _rollout_res, eval_res = _rollout_and_evaluate(
                     self.env,
@@ -1016,193 +822,18 @@ class EnvSession:
         artifacts_dir: Path | None = None,
         repair_iters: int = 3,
     ) -> EvaluationCallResult:
-        return self.evaluation(
-            mode=mode,
-            env_overrides=env_overrides,
-            artifacts_dir=artifacts_dir,
-            repair_iters=repair_iters,
-        )
-
-    def rollout_and_evaluation(
-        self,
-        llm: str | Path | None = None,
-        *,
-        mode: str = "smoke",
-        require_samples: bool = False,
-        env_overrides: dict[str, str] | None = None,
-        artifacts_dir: Path | None = None,
-        repair_iters: int = 3,
-    ) -> tuple[RolloutCallResult, EvaluationCallResult]:
-        if llm is not None:
-            self._set_llm(llm)
-        if not self.llm_kind:
-            raise ValueError("missing_llm: call deploy/rollout with llm=model_dir|model_id first")
-
         run_root = _resolve_run_root(self.env.repo, run_id=self.run_id, artifacts_dir=artifacts_dir)
         overrides = self._base_overrides(mode=mode, extra=env_overrides)
-        self._apply_llm_overrides(overrides)
-
-        last_rollout: RolloutCallResult | None = None
-        last_eval: EvaluationCallResult | None = None
-
-        for attempt in range(int(max(0, repair_iters)) + 1):
-            deploy_dir = (run_root / f"deploy_attempt_{attempt+1:02d}").resolve()
-            roll_eval_dir = (run_root / f"rollout_evaluation_attempt_{attempt+1:02d}").resolve()
-
-            deploy_res = _deploy(
-                self.env,
-                artifacts_dir=deploy_dir,
-                env_overrides=overrides,
-                unattended=str(self.unattended or "strict"),
-                run_bootstrap_first=True,
+        try:
+            res = self._evaluation(
+                mode=mode,
+                env_overrides=env_overrides,
+                artifacts_dir=artifacts_dir,
+                repair_iters=repair_iters,
             )
-            if not deploy_res.ok:
-                last_rollout = RolloutCallResult(ok=False, artifacts_dir=roll_eval_dir, rollout_path=None, verify=deploy_res.verify)
-                last_eval = EvaluationCallResult(ok=False, artifacts_dir=roll_eval_dir, metrics_path=None, metrics=None, verify=deploy_res.verify)
-                if attempt >= int(max(0, repair_iters)):
-                    return last_rollout, last_eval
-                repair_contract(
-                    repo=self.env.repo,
-                    model=str(self.opencode_repair_model or self.opencode_model or "").strip(),
-                    opencode_url=str(self.opencode_url or ""),
-                    unattended=str(self.unattended or "strict"),
-                    artifacts_dir=(run_root / f"repair_{attempt+1:02d}").resolve(),
-                    failed_stage=str(getattr(deploy_res.verify, "failed_stage", "") or "deploy"),
-                    deploy_artifacts_dir=deploy_dir,
-                    rollout_eval_artifacts_dir=roll_eval_dir,
-                    command_hints=self.command_hints,
-                    extra_context="",
-                    timeout_seconds=int(self.opencode_timeout_seconds or 300),
-                    retry_attempts=int(self.opencode_retry_attempts or 0),
-                    retry_backoff_seconds=float(self.opencode_retry_backoff_seconds or 0.0),
-                    context_length=(int(self.opencode_context_length) if self.opencode_context_length is not None else None),
-                    max_prompt_chars=(int(self.opencode_max_prompt_chars) if self.opencode_max_prompt_chars is not None else None),
-                )
-                continue
-
-            self.runtime_env_path = deploy_res.runtime_env_path or (self.env.repo / ".aider_fsm" / "runtime_env.json").resolve()
-            overrides2 = dict(overrides)
-            overrides2.update(with_runtime_env_path(self.runtime_env_path))
-            self._ensure_local_openai_service(artifacts_dir=deploy_dir, overrides=overrides2)
-            self._apply_runtime_env_inference_overrides(overrides2)
-
-            rollout_res, eval_res = _rollout_and_evaluate(
-                self.env,
-                artifacts_dir=roll_eval_dir,
-                env_overrides=overrides2,
-                unattended=str(self.unattended or "strict"),
-                run_bootstrap_first=True,
-            )
-            combined = ""
-            if not eval_res.ok:
-                combined = _verification_errors_summary(eval_res.verify)
-            if eval_res.ok and bool(self.require_metrics) and isinstance(eval_res.metrics, dict) and eval_res.metrics.get("ok") is not True:
-                combined = "metrics.ok_not_true"
-                try:
-                    (roll_eval_dir / "metrics_contract_error.txt").write_text("metrics.ok_not_true\n", encoding="utf-8")
-                except Exception:
-                    pass
-                eval_res = EvaluationCallResult(
-                    ok=False,
-                    artifacts_dir=eval_res.artifacts_dir,
-                    metrics_path=eval_res.metrics_path,
-                    metrics=eval_res.metrics,
-                    verify=eval_res.verify,
-                )
-            if rollout_res.ok and eval_res.ok and bool(self.require_metrics) and self._audit_mode() != "off":
-                audit_issue = audit_eval_script_for_hardcoded_nonzero_score(self.env.repo)
-                audit_issue2 = audit_eval_script_has_real_execution(self.env.repo, extra_markers=self.hint_anchors)
-                audit_issue3 = audit_eval_script_mentions_any_anchor(self.env.repo, self.hint_anchors)
-                combined = "\n\n".join([x for x in (audit_issue, audit_issue2, audit_issue3) if x]).strip()
-                if combined:
-                    try:
-                        (roll_eval_dir / "evaluation_audit_error.txt").write_text(combined + "\n", encoding="utf-8")
-                    except Exception:
-                        pass
-                    if self._audit_mode() != "warn-only":
-                        eval_res = EvaluationCallResult(
-                            ok=False,
-                            artifacts_dir=eval_res.artifacts_dir,
-                            metrics_path=eval_res.metrics_path,
-                            metrics=eval_res.metrics,
-                            verify=eval_res.verify,
-                        )
-            if rollout_res.ok and bool(require_samples):
-                raw_limit = overrides2.get("AIDER_EVAL_LIMIT")
-                try:
-                    lim = int(str(raw_limit).strip()) if str(raw_limit or "").strip() else None
-                except Exception:
-                    lim = None
-                ok_samples, reason = _validate_rollout_samples(
-                    self.env.repo,
-                    rollout_res.rollout_path,
-                    mode=str(mode or "smoke"),
-                    eval_limit=lim,
-                )
-                if not ok_samples:
-                    try:
-                        (roll_eval_dir / "rollout_contract_error.txt").write_text(str(reason) + "\n", encoding="utf-8")
-                    except Exception:
-                        pass
-                    combined = (combined + "\n" + str(reason)).strip() if combined else str(reason)
-                    rollout_res = RolloutCallResult(
-                        ok=False,
-                        artifacts_dir=rollout_res.artifacts_dir,
-                        rollout_path=rollout_res.rollout_path,
-                        verify=rollout_res.verify,
-                    )
-            last_rollout, last_eval = rollout_res, eval_res
-            if rollout_res.ok and eval_res.ok:
-                return rollout_res, eval_res
-
-            if attempt >= int(max(0, repair_iters)):
-                return rollout_res, eval_res
-
-            self._maybe_teardown(run_root=run_root / f"teardown_attempt_{attempt+1:02d}", overrides=overrides2)
-            repair_contract(
-                repo=self.env.repo,
-                model=str(self.opencode_repair_model or self.opencode_model or "").strip(),
-                opencode_url=str(self.opencode_url or ""),
-                unattended=str(self.unattended or "strict"),
-                artifacts_dir=(run_root / f"repair_{attempt+1:02d}").resolve(),
-                failed_stage=("rollout" if not rollout_res.ok else "evaluation"),
-                deploy_artifacts_dir=deploy_dir,
-                rollout_eval_artifacts_dir=roll_eval_dir,
-                llm_kind=str(self.llm_kind or ""),
-                llm_model=str(self.llm_model or ""),
-                command_hints=self.command_hints,
-                extra_context=(combined or ("rollout_contract_invalid" if (require_samples and not rollout_res.ok) else "")),
-                timeout_seconds=int(self.opencode_timeout_seconds or 300),
-                retry_attempts=int(self.opencode_retry_attempts or 0),
-                retry_backoff_seconds=float(self.opencode_retry_backoff_seconds or 0.0),
-                context_length=(int(self.opencode_context_length) if self.opencode_context_length is not None else None),
-                max_prompt_chars=(int(self.opencode_max_prompt_chars) if self.opencode_max_prompt_chars is not None else None),
-            )
-
-        assert last_rollout is not None and last_eval is not None  # pragma: no cover
-        return last_rollout, last_eval
-
-    def teardown(
-        self,
-        *,
-        env_overrides: dict[str, str] | None = None,
-        artifacts_dir: Path | None = None,
-    ) -> bool:
-        overrides = self._base_overrides(mode=str((env_overrides or {}).get("AIDER_EVAL_MODE") or "smoke"), extra=env_overrides)
-        run_root = _resolve_run_root(self.env.repo, run_id=self.run_id, artifacts_dir=artifacts_dir)
-        ok = bool(
-            _deploy_teardown(
-                self.env,
-                artifacts_dir=(run_root / "deploy_teardown").resolve(),
-                env_overrides=overrides,
-                unattended=str(self.unattended or "strict"),
-            )
-        )
-        self._best_effort_stop_local_server(overrides=overrides)
-        return ok
-
-
-_DEFAULT_SESSION: EnvSession | None = None
+            return res
+        finally:
+            self._maybe_teardown(run_root=run_root / "final_teardown", overrides=overrides)
 
 
 def setup(
@@ -1236,6 +867,8 @@ def setup(
     - 内容：若缺少 pipeline.yml，则通过 OpenCode scaffold 合同（pipeline.yml + `.aider_fsm/**`）。
     - 约束：本函数不包含任何 benchmark-specific hardcoding。
     """
+    clones_dir = _resolve_path(clones_dir) if clones_dir is not None else None
+    artifacts_dir = _resolve_path(artifacts_dir) if artifacts_dir is not None else None
     env_handle: EnvHandle = open_env(
         target,
         clones_dir=clones_dir,
@@ -1285,117 +918,4 @@ def setup(
         opencode_max_prompt_chars=(int(opencode_max_prompt_chars) if opencode_max_prompt_chars is not None else None),
         audit=str(audit or "on"),
     )
-
-    global _DEFAULT_SESSION
-    _DEFAULT_SESSION = session
     return session
-
-
-def _require_session(session: EnvSession | None) -> EnvSession:
-    s = session or _DEFAULT_SESSION
-    if s is None:
-        raise RuntimeError("env_not_setup: call env.setup(...) first")
-    return s
-
-
-def deploy(
-    llm: str | Path,
-    *,
-    session: EnvSession | None = None,
-    mode: str = "smoke",
-    env_overrides: dict[str, str] | None = None,
-    artifacts_dir: Path | None = None,
-    repair_iters: int = 3,
-) -> DeployCallResult:
-    return _require_session(session).deploy(
-        llm,
-        mode=mode,
-        env_overrides=env_overrides,
-        artifacts_dir=artifacts_dir,
-        repair_iters=repair_iters,
-    )
-
-
-def rollout(
-    llm: str | Path | None = None,
-    *,
-    session: EnvSession | None = None,
-    mode: str = "smoke",
-    require_samples: bool = False,
-    env_overrides: dict[str, str] | None = None,
-    artifacts_dir: Path | None = None,
-    repair_iters: int = 3,
-) -> RolloutCallResult:
-    return _require_session(session).rollout(
-        llm,
-        mode=mode,
-        require_samples=require_samples,
-        env_overrides=env_overrides,
-        artifacts_dir=artifacts_dir,
-        repair_iters=repair_iters,
-    )
-
-
-def evaluation(
-    *,
-    session: EnvSession | None = None,
-    mode: str = "smoke",
-    env_overrides: dict[str, str] | None = None,
-    artifacts_dir: Path | None = None,
-    repair_iters: int = 3,
-) -> EvaluationCallResult:
-    return _require_session(session).evaluation(
-        mode=mode,
-        env_overrides=env_overrides,
-        artifacts_dir=artifacts_dir,
-        repair_iters=repair_iters,
-    )
-
-
-def evaluate(
-    *,
-    session: EnvSession | None = None,
-    mode: str = "smoke",
-    env_overrides: dict[str, str] | None = None,
-    artifacts_dir: Path | None = None,
-    repair_iters: int = 3,
-) -> EvaluationCallResult:
-    return _require_session(session).evaluate(
-        mode=mode,
-        env_overrides=env_overrides,
-        artifacts_dir=artifacts_dir,
-        repair_iters=repair_iters,
-    )
-
-
-def rollout_and_evaluation(
-    llm: str | Path | None = None,
-    *,
-    session: EnvSession | None = None,
-    mode: str = "smoke",
-    require_samples: bool = False,
-    env_overrides: dict[str, str] | None = None,
-    artifacts_dir: Path | None = None,
-    repair_iters: int = 3,
-) -> tuple[RolloutCallResult, EvaluationCallResult]:
-    return _require_session(session).rollout_and_evaluation(
-        llm,
-        mode=mode,
-        require_samples=require_samples,
-        env_overrides=env_overrides,
-        artifacts_dir=artifacts_dir,
-        repair_iters=repair_iters,
-    )
-
-
-def teardown(
-    *,
-    session: EnvSession | None = None,
-    env_overrides: dict[str, str] | None = None,
-    artifacts_dir: Path | None = None,
-) -> bool:
-    return _require_session(session).teardown(env_overrides=env_overrides, artifacts_dir=artifacts_dir)
-
-
-def current_session() -> EnvSession | None:
-    return _DEFAULT_SESSION
