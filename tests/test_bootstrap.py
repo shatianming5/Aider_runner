@@ -181,3 +181,41 @@ def test_run_bootstrap_writes_parse_warnings_artifact(tmp_path: Path) -> None:
     assert stage.ok is True
     warns = repo / "artifacts" / "bootstrap_parse_warnings.json"
     assert warns.exists()
+
+
+def test_run_bootstrap_does_not_resolve_aider_fsm_python_symlink(tmp_path: Path) -> None:
+    # 作用：pytest 测试用例：验证行为契约
+    # 能否简略：否
+    # 原因：防止把 venv/bin/python 的 symlink 解析成 base interpreter（会破坏 venv 隔离，导致后续 stages 跑错 Python）
+    # 证据：位置=tests/test_bootstrap.py；类型=function；引用≈1；规模≈30行
+    repo = tmp_path
+    (repo / ".aider_fsm" / "venv" / "bin").mkdir(parents=True, exist_ok=True)
+    base = repo / "base_python"
+    base.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+    py = repo / ".aider_fsm" / "venv" / "bin" / "python"
+    py.symlink_to(base)
+
+    bootstrap_path = repo / ".aider_fsm" / "bootstrap.yml"
+    bootstrap_path.write_text(
+        "\n".join(
+            [
+                "version: 1",
+                "env:",
+                "  AIDER_FSM_PYTHON: .aider_fsm/venv/bin/python",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    stage, applied_env = run_bootstrap(
+        repo,
+        bootstrap_path=bootstrap_path,
+        pipeline=None,
+        unattended="strict",
+        artifacts_dir=repo / "artifacts",
+    )
+    assert stage.ok is True
+    # The runner must preserve the venv path here; resolving the symlink would point at
+    # the base interpreter and break venv isolation.
+    assert applied_env.get("AIDER_FSM_PYTHON") == str(py)

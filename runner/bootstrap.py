@@ -164,7 +164,9 @@ def _normalize_bootstrap_applied_env_paths(repo: Path, applied_env: dict[str, st
         try:
             p = Path(py)
             if not p.is_absolute():
-                out["AIDER_FSM_PYTHON"] = str((root / p).resolve())
+                # Do not use `.resolve()` here: venv interpreters are often symlinks to the
+                # base interpreter, and resolving the symlink breaks venv isolation.
+                out["AIDER_FSM_PYTHON"] = str((root / p).absolute())
         except Exception:
             pass
 
@@ -190,7 +192,7 @@ def _normalize_bootstrap_applied_env_paths(repo: Path, applied_env: dict[str, st
             if p2.is_absolute():
                 new_parts.append(seg)
                 continue
-            new_parts.append(str((root / p2).resolve()))
+            new_parts.append(str((root / p2).absolute()))
             changed = True
         if changed:
             out["PATH"] = os.pathsep.join(new_parts)
