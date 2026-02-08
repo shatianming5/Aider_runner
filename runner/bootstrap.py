@@ -141,6 +141,63 @@ def _apply_env_mapping(base: dict[str, str], mapping: dict[str, str]) -> tuple[d
     return env, applied
 
 
+def _normalize_bootstrap_applied_env_paths(repo: Path, applied_env: dict[str, str]) -> dict[str, str]:
+    """Normalize common path-like bootstrap env values to be robust across workdirs.
+
+    Why this exists:
+    - Many scaffolded `bootstrap.yml` files set values like:
+      - `PATH: ".aider_fsm/venv/bin:$PATH"`
+      - `AIDER_FSM_PYTHON: ".aider_fsm/venv/bin/python"`
+    - Some stages (notably `runner.hints_exec`) may execute commands from an isolated
+      workdir under `$AIDER_FSM_ARTIFACTS_DIR`, where relative PATH segments would
+      no longer resolve to the repo's venv.
+    """
+    # 作用：Normalize common path-like bootstrap env values to be robust across workdirs.
+    # 能否简略：否
+    # 原因：涉及跨 workdir 的稳定性修复（真实运行中会导致 command not found）；规模≈40 行；引用次数≈1（静态近似，可能包含注释/字符串）
+    # 证据：位置=runner/bootstrap.py:144；类型=function；引用≈1；规模≈40行
+    root = Path(repo).resolve()
+    out = dict(applied_env or {})
+
+    py = str(out.get("AIDER_FSM_PYTHON") or "").strip()
+    if py:
+        try:
+            p = Path(py)
+            if not p.is_absolute():
+                out["AIDER_FSM_PYTHON"] = str((root / p).resolve())
+        except Exception:
+            pass
+
+    raw_path = str(out.get("PATH") or "").strip()
+    if raw_path:
+        parts = raw_path.split(os.pathsep)
+        new_parts: list[str] = []
+        changed = False
+        for item in parts:
+            seg = str(item or "")
+            if seg == "":
+                # Preserve empty segments (meaning: current directory).
+                new_parts.append("")
+                continue
+            if "$" in seg:
+                new_parts.append(seg)
+                continue
+            try:
+                p2 = Path(seg)
+            except Exception:
+                new_parts.append(seg)
+                continue
+            if p2.is_absolute():
+                new_parts.append(seg)
+                continue
+            new_parts.append(str((root / p2).resolve()))
+            changed = True
+        if changed:
+            out["PATH"] = os.pathsep.join(new_parts)
+
+    return out
+
+
 def _is_sensitive_key(key: str) -> bool:
     """中文说明：
     - 含义：粗略判断一个环境变量 key 是否可能包含敏感信息（用于日志脱敏）。
@@ -407,6 +464,8 @@ def run_bootstrap(
     env_base["AIDER_FSM_REPO_ROOT"] = str(repo.resolve())
 
     env_for_cmds, applied_env = _apply_env_mapping(env_base, spec.env)
+    applied_env = _normalize_bootstrap_applied_env_paths(repo, applied_env)
+    env_for_cmds.update(dict(applied_env))
     env_for_cmds = safe_env(env_for_cmds, {}, unattended=unattended)
     env_for_cmds["AIDER_FSM_STAGE"] = "bootstrap"
     env_for_cmds["AIDER_FSM_ARTIFACTS_DIR"] = str(artifacts_dir.resolve())
