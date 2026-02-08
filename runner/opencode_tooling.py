@@ -20,6 +20,10 @@ class ToolCall:
     - 内容：kind 表示类型（bash/file），start 表示在原文本中的起始位置（用于排序），payload 是解析出的参数（如 command/filePath/content）。
     - 可简略：否（tool-call 是 agent 执行闭环的基础协议）。
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：规模≈10 行；引用次数≈21（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/opencode_tooling.py:23；类型=class；引用≈21；规模≈10行
 
     kind: str  # bash | file
     start: int
@@ -33,6 +37,10 @@ class ToolResult:
     - 内容：包含执行是否成功、以及标准化 detail（例如 read 的 content，bash 的 rc/stdout/stderr）。
     - 可简略：否（tool loop 的关键数据结构；影响可审计性与可恢复性）。
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：规模≈10 行；引用次数≈28（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/opencode_tooling.py:36；类型=class；引用≈28；规模≈10行
 
     kind: str
     ok: bool
@@ -56,6 +64,10 @@ def _xml_unescape(text: str) -> str:
     OpenCode tool-calls are XML-like. Model outputs often escape `<`/`&` in file content
     (e.g. `<<` becomes `&lt;&lt;`). We want the literal characters in written files.
     """
+    # 作用：Unescape common XML/HTML entities in tool-call payloads.
+    # 能否简略：否
+    # 原因：规模≈15 行；引用次数≈7（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/opencode_tooling.py:59；类型=function；引用≈7；规模≈15行
     # Some model outputs are double-escaped (`&amp;amp;`), so unescape a few times
     # until stable. Keep a small cap to avoid pathological expansion.
     s = str(text or "")
@@ -73,6 +85,10 @@ def _decode_attr_value(raw: str) -> str:
     Keep unknown escapes intact (e.g. ``\\n``) so later logic can decide whether
     to interpret them.
     """
+    # 作用：Decode minimal escapes inside XML-like attribute values.
+    # 能否简略：部分
+    # 原因：规模≈22 行；引用次数≈4（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
+    # 证据：位置=runner/opencode_tooling.py:76；类型=function；引用≈4；规模≈22行
     out: list[str] = []
     i = 0
     while i < len(raw):
@@ -93,6 +109,10 @@ def _decode_attr_value(raw: str) -> str:
 
 def _parse_attrs(attrs_raw: str) -> dict[str, str]:
     """Parse XML-like key/value attributes with quoted values."""
+    # 作用：Parse XML-like key/value attributes with quoted values.
+    # 能否简略：否
+    # 原因：规模≈55 行；引用次数≈2（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/opencode_tooling.py:96；类型=function；引用≈2；规模≈55行
     attrs: dict[str, str] = {}
     i = 0
     n = len(attrs_raw)
@@ -154,6 +174,10 @@ def _extract_attr_loose(attrs_raw: str, key: str) -> str | None:
     Handles cases where quoted values contain unescaped quotes that break the
     strict parser, especially `content='...f'...'`.
     """
+    # 作用：Best-effort attribute extractor for malformed/self-closing tags.
+    # 能否简略：否
+    # 原因：规模≈36 行；引用次数≈6（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/opencode_tooling.py:157；类型=function；引用≈6；规模≈36行
     km = re.search(rf"\b{re.escape(key)}\s*=\s*(['\"])", attrs_raw, flags=re.IGNORECASE)
     if not km:
         return None
@@ -192,6 +216,10 @@ def _try_json(text: str) -> dict[str, Any] | None:
     - 内容：解析失败或非 dict 则返回 None；用于从 fenced code block / tag body 中提取工具参数。
     - 可简略：可能（内部 helper；但集中处理能减少重复 try/except）。
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：规模≈88 行；引用次数≈6（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/opencode_tooling.py:195；类型=function；引用≈6；规模≈88行
     s = text.strip()
     if not s:
         return None
@@ -205,6 +233,10 @@ def _try_json(text: str) -> dict[str, Any] | None:
         # Fix by doubling any backslash that does not introduce a valid JSON escape sequence,
         # but only when inside JSON double-quoted strings.
         def _repair_invalid_string_escapes(raw: str) -> str:
+            # 作用：内部符号：_try_json._repair_invalid_string_escapes
+            # 能否简略：否
+            # 原因：规模≈42 行；引用次数≈3（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+            # 证据：位置=runner/opencode_tooling.py:208；类型=function；引用≈3；规模≈42行
             valid_next = {'"', "\\", "/", "b", "f", "n", "r", "t", "u"}
             out: list[str] = []
             in_string = False
@@ -278,6 +310,10 @@ def _try_json(text: str) -> dict[str, Any] | None:
 
 def _extract_json_object(text: str, start: int) -> tuple[str, int] | None:
     """Extract a balanced JSON object from `text[start:]` where `text[start] == '{'`."""
+    # 作用：Extract a balanced JSON object from `text[start:]` where `text[start] == '{'`.
+    # 能否简略：部分
+    # 原因：规模≈31 行；引用次数≈2（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
+    # 证据：位置=runner/opencode_tooling.py:281；类型=function；引用≈2；规模≈31行
     if start < 0 or start >= len(text) or text[start] != "{":
         return None
     depth = 0
@@ -311,6 +347,10 @@ def _extract_json_object(text: str, start: int) -> tuple[str, int] | None:
 
 def _find_tag_gt(text: str, start: int) -> int:
     """Find the end of an XML-like opening tag, respecting quoted attrs."""
+    # 作用：Find the end of an XML-like opening tag, respecting quoted attrs.
+    # 能否简略：部分
+    # 原因：规模≈28 行；引用次数≈2（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
+    # 证据：位置=runner/opencode_tooling.py:314；类型=function；引用≈2；规模≈28行
     i = start
     quote: str | None = None
     escaped = False
@@ -345,6 +385,10 @@ def _iter_attr_tags(text: str) -> Iterable[tuple[str, int, str, str]]:
     Uses a linear scanner to avoid catastrophic regex backtracking on malformed
     long assistant outputs.
     """
+    # 作用：Yield (tag, start, attrs_raw, body) for `<bash|read|write|edit ...>` tags.
+    # 能否简略：部分
+    # 原因：规模≈37 行；引用次数≈2（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
+    # 证据：位置=runner/opencode_tooling.py:348；类型=function；引用≈2；规模≈37行
     lower = text.lower()
     pos = 0
     while True:
@@ -398,6 +442,10 @@ def parse_tool_calls(text: str) -> list[ToolCall]:
     - <tool_call><read>{...}</read></tool_call>
     - read{...} / write\n{...} / bash{...}
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：规模≈187 行；引用次数≈28（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/opencode_tooling.py:401；类型=function；引用≈28；规模≈187行
     calls: list[ToolCall] = []
 
     # Compatibility: some models output malformed tags like `bash<command="..."/>`
@@ -573,6 +621,10 @@ def _is_env_like(path: Path) -> bool:
     - 内容：匹配 `.env`/`.env.*`/`*.env` 等命名；用于阻止 agent 读取/写入这些文件。
     - 可简略：可能（启发式；可按实际项目策略调整）。
     """
+    # 作用：中文说明：
+    # 能否简略：部分
+    # 原因：规模≈16 行；引用次数≈4（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
+    # 证据：位置=runner/opencode_tooling.py:576；类型=function；引用≈4；规模≈16行
     name = path.name.lower()
     if name == ".env":
         return True
@@ -591,6 +643,10 @@ def _within_root(root: Path, target: Path) -> bool:
     - 内容：通过 `relative_to` 实现；用于限制 tool-call 读写只能发生在 repo 内。
     - 可简略：可能（与 `runner.paths.is_relative_to` 类似，可考虑合并）。
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：规模≈11 行；引用次数≈6（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/opencode_tooling.py:594；类型=function；引用≈6；规模≈11行
     try:
         target.relative_to(root)
         return True
@@ -604,6 +660,10 @@ def _sanitized_env(*, unattended: str) -> dict[str, str]:
     - 内容：只传递 PATH/HOME/LANG 等少量基础变量；显式过滤 *_KEY/*_TOKEN/*_PASSWORD 等；再应用 strict 模式的 safe_env 默认值。
     - 可简略：否（避免 secret 泄漏到不受信任命令的关键安全措施）。
     """
+    # 作用：中文说明：
+    # 能否简略：是
+    # 原因：规模≈20 行；引用次数≈3（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
+    # 证据：位置=runner/opencode_tooling.py:607；类型=function；引用≈3；规模≈20行
     base: dict[str, str] = {}
     for k in ("PATH", "HOME", "LANG", "LC_ALL", "TERM"):
         v = os.environ.get(k)
@@ -626,6 +686,10 @@ def _restricted_bash_allowed(cmd: str, *, repo: Path) -> tuple[bool, str | None]
     - 内容：禁止 shell 元字符（`;|&><`）；只允许少量只读/诊断命令（ls/rg/grep、git status/diff/log/show、cat repo 内非 env 文件）。
     - 可简略：否（这是 tool-call 执行层的核心安全边界）。
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：规模≈53 行；引用次数≈3（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/opencode_tooling.py:629；类型=function；引用≈3；规模≈53行
     s = cmd.strip()
     if not s:
         return False, "empty_command"
@@ -682,6 +746,10 @@ class ToolPolicy:
     - 内容：结合 repo 根目录、PLAN/pipeline 路径、purpose（plan_update/execute/scaffold 等）、bash_mode（restricted/full）与 unattended 模式来做精细化限制。
     - 可简略：否（安全与权限分层的核心）。
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：规模≈93 行；引用次数≈15（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/opencode_tooling.py:685；类型=class；引用≈15；规模≈93行
 
     repo: Path
     plan_path: Path
@@ -696,6 +764,10 @@ class ToolPolicy:
         - 内容：禁止读取 dotenv；禁止 repo 外路径。
         - 可简略：可能（规则较少；但建议保留集中入口）。
         """
+        # 作用：中文说明：
+        # 能否简略：否
+        # 原因：规模≈11 行；引用次数≈1（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+        # 证据：位置=runner/opencode_tooling.py:699；类型=method；引用≈1；规模≈11行
         if _is_env_like(path):
             return False, "reading_env_files_is_blocked"
         if not _within_root(self.repo, path):
@@ -712,6 +784,10 @@ class ToolPolicy:
           - fix_or_replan：禁止写 pipeline
         - 可简略：否（权限隔离的关键；简化易导致越权写入）。
         """
+        # 作用：中文说明：
+        # 能否简略：否
+        # 原因：规模≈47 行；引用次数≈11（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+        # 证据：位置=runner/opencode_tooling.py:715；类型=method；引用≈11；规模≈47行
         if _is_env_like(path):
             return False, "writing_env_files_is_blocked"
         if not _within_root(self.repo, path):
@@ -756,6 +832,10 @@ class ToolPolicy:
         - 内容：restricted 模式走 `_restricted_bash_allowed`；full 模式则复用 `security.cmd_allowed` 与 strict 的交互阻断。
         - 可简略：否（命令执行安全边界）。
         """
+        # 作用：中文说明：
+        # 能否简略：否
+        # 原因：规模≈19 行；引用次数≈2（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+        # 证据：位置=runner/opencode_tooling.py:759；类型=method；引用≈2；规模≈19行
         cmd = cmd.strip()
         if not cmd:
             return False, "empty_command"
@@ -784,6 +864,10 @@ def execute_tool_calls(
       - bash：执行命令（固定 timeout=60s），并对 stdout/stderr 截断；执行环境使用 `_sanitized_env`
     - 可简略：否（tool loop 的执行内核；影响可控性与安全）。
     """
+    # 作用：中文说明：
+    # 能否简略：部分
+    # 原因：规模≈282 行；引用次数≈8（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
+    # 证据：位置=runner/opencode_tooling.py:787；类型=function；引用≈8；规模≈282行
     results: list[ToolResult] = []
 
     for call in calls:
@@ -1061,6 +1145,10 @@ def format_tool_results(results: list[ToolResult]) -> str:
     - 内容：将结果列表序列化为 JSON，并提示 agent 继续发起 tool-calls 或给出最终回复。
     - 可简略：可能（格式协议相对固定；但保留集中函数便于未来调整兼容性）。
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：规模≈13 行；引用次数≈3（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/opencode_tooling.py:1064；类型=function；引用≈3；规模≈13行
     payload = [r.detail | {"tool": r.kind, "ok": r.ok} for r in results]
     return (
         "Tool results (executed by the runner). Continue by either issuing more tool calls or responding normally.\n\n"

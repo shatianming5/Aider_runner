@@ -55,6 +55,10 @@ def compile_patterns(patterns: list[str] | tuple[str, ...]) -> list[re.Pattern[s
     - 内容：对非法正则会降级为 `re.escape` 以保证“配置写错也能安全运行”；用于 deny/allow 策略匹配。
     - 可简略：可能（工具函数；但对错误正则的降级策略很实用）。
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：规模≈16 行；引用次数≈6（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/security.py:58；类型=function；引用≈6；规模≈16行
     compiled: list[re.Pattern[str]] = []
     for raw in patterns:
         p = str(raw)
@@ -73,6 +77,10 @@ def matches_any(patterns: list[re.Pattern[str]], text: str) -> str | None:
     - 内容：用于给出“为什么被阻止”的可解释原因（返回命中的规则）。
     - 可简略：可能（小工具；但可解释性对审计很关键）。
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：规模≈10 行；引用次数≈6（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/security.py:76；类型=function；引用≈6；规模≈10行
     for p in patterns:
         if p.search(text):
             return p.pattern
@@ -85,6 +93,10 @@ def looks_interactive(cmd: str) -> bool:
     - 内容：目前只覆盖少量高风险/高概率卡住的命令（如 `docker login`、`gh auth login`）。
     - 可简略：可能（启发式可以扩展/收缩；但保留此检查能显著降低卡死风险）。
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：规模≈16 行；引用次数≈8（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/security.py:88；类型=function；引用≈8；规模≈16行
     s = cmd.strip().lower()
     if not s:
         return False
@@ -103,6 +115,10 @@ def safe_env(base: dict[str, str], extra: dict[str, str], *, unattended: str) ->
     - 内容：合并 base+extra；在 strict 模式下设置 `CI=1`、`GIT_TERMINAL_PROMPT=0` 等以减少交互/噪音。
     - 可简略：否（安全/可复现运行的重要一环）。
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：规模≈14 行；引用次数≈15（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/security.py:106；类型=function；引用≈15；规模≈14行
     env = dict(base)
     env.update({k: str(v) for k, v in extra.items()})
     if unattended == "strict":
@@ -119,6 +135,10 @@ def cmd_allowed(cmd: str, *, pipeline: PipelineSpec | None) -> tuple[bool, str |
     - 内容：始终应用 hard deny（如 rm -rf /、fork bomb）；若无 pipeline 合同则用默认 safe denylist；若有 pipeline 则按 `security.mode/allowlist/denylist` 决定。
     - 可简略：否（这是 runner 的核心安全边界；任何简化都可能引入破坏性风险）。
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：规模≈42 行；引用次数≈11（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/security.py:122；类型=function；引用≈11；规模≈42行
     cmd = cmd.strip()
     if not cmd:
         return False, "empty_command"
@@ -172,6 +192,10 @@ def audit_bash_script(
       - 命中后返回 (False, reason) 并让 stage 以 rc=126 失败，避免脚本成为逃逸通道。
     - 可简略：否（这是“让 OpenCode 生成脚本也可相对安全执行”的关键防线）。
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：规模≈80 行；引用次数≈3（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/security.py:175；类型=function；引用≈3；规模≈80行
     s = str(cmd or "").strip()
     if not s:
         return True, None

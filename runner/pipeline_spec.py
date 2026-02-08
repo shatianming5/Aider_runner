@@ -21,6 +21,10 @@ class PipelineSpec:
     NOTE: The runner intentionally treats this file as *human-owned* and will revert
     any model edits during plan-update/execute steps.
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：规模≈112 行；引用次数≈48（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/pipeline_spec.py:24；类型=class；引用≈48；规模≈112行
 
     version: int = 1
 
@@ -101,6 +105,10 @@ class PipelineSpec:
         - 内容：避免调用点写大量 `or []` / `or {}`；同时保持 dataclass frozen 的不变性。
         - 可简略：否（统一空值语义，减少 bug）。
         """
+        # 作用：中文说明：
+        # 能否简略：部分
+        # 原因：规模≈25 行；引用次数≈0（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
+        # 证据：位置=runner/pipeline_spec.py:104；类型=method；引用≈0；规模≈25行
         for attr in (
             "tests_cmds",
             "deploy_setup_cmds",
@@ -128,6 +136,10 @@ def load_pipeline_spec(path: Path) -> PipelineSpec:
     - 内容：使用 PyYAML 加载顶层 mapping；校验 version=1；把各 stage 的 cmd/cmds、env、workdir、metrics_path/required_keys、安全策略等字段解析为强类型对象。
     - 可简略：否（契约解析与校验决定 runner 能否安全、确定性地执行）。
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：规模≈187 行；引用次数≈13（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/pipeline_spec.py:131；类型=function；引用≈13；规模≈187行
     try:
         import yaml  # type: ignore
     except Exception as e:  # pragma: no cover
@@ -150,6 +162,10 @@ def load_pipeline_spec(path: Path) -> PipelineSpec:
         - 内容：允许 None → `{}`；否则要求是 dict，否则抛出带路径的 ValueError。
         - 可简略：是（小工具函数；也可用重复的 if/raise 替代）。
         """
+        # 作用：中文说明：
+        # 能否简略：否
+        # 原因：规模≈11 行；引用次数≈11（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+        # 证据：位置=runner/pipeline_spec.py:153；类型=function；引用≈11；规模≈11行
         if value is None:
             return {}
         if not isinstance(value, dict):
@@ -162,6 +178,10 @@ def load_pipeline_spec(path: Path) -> PipelineSpec:
         - 内容：过滤空 key；把值统一转成字符串（None → `\"\"`）；类型不符时报错。
         - 可简略：可能（重复较多，但集中处理能保证一致性与可测试性）。
         """
+        # 作用：中文说明：
+        # 能否简略：否
+        # 原因：规模≈19 行；引用次数≈7（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+        # 证据：位置=runner/pipeline_spec.py:165；类型=function；引用≈7；规模≈19行
         if value is None:
             return {}
         if not isinstance(value, dict):
@@ -182,6 +202,10 @@ def load_pipeline_spec(path: Path) -> PipelineSpec:
         - 内容：优先读取 `cmds_key`（要求 list[str]）；否则读取 `cmd_key`（要求非空 str）；都缺失则返回空列表。
         - 可简略：是（本质是兼容层；若未来只保留一种字段，可删除）。
         """
+        # 作用：中文说明：
+        # 能否简略：否
+        # 原因：规模≈17 行；引用次数≈9（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+        # 证据：位置=runner/pipeline_spec.py:185；类型=function；引用≈9；规模≈17行
         if cmds_key in m and m.get(cmds_key) is not None:
             v = m.get(cmds_key)
             if not isinstance(v, list) or not all(isinstance(x, str) and x.strip() for x in v):

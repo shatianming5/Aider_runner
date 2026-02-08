@@ -10,6 +10,10 @@ from runner.contract_provenance import (
 
 
 def test_contract_provenance_classifies_runner_and_tool_writes(tmp_path: Path) -> None:
+    # 作用：pytest 测试用例：验证行为契约
+    # 能否简略：否
+    # 原因：测试代码（优先可读性）；规模≈36 行；引用次数≈1（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=tests/test_contract_provenance.py:13；类型=function；引用≈1；规模≈36行
     repo = tmp_path / "repo"
     repo.mkdir()
     (repo / "pipeline.yml").write_text("version: 1\n", encoding="utf-8")

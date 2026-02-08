@@ -23,6 +23,10 @@ _PREFERRED_CLONES_BASE = Path("/data/tiansha/aider_fsm_targets")
 
 def _default_clones_base() -> Path:
     """Prefer /data for large clone/snapshot caches, fallback to system temp."""
+    # 作用：Prefer /data for large clone/snapshot caches, fallback to system temp.
+    # 能否简略：部分
+    # 原因：规模≈21 行；引用次数≈3（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
+    # 证据：位置=runner/repo_resolver.py:26；类型=function；引用≈3；规模≈21行
     candidates = [
         _PREFERRED_CLONES_BASE,
         Path(tempfile.gettempdir()) / "aider_fsm_targets",
@@ -50,6 +54,10 @@ def is_probably_repo_url(repo: str) -> bool:
     - 内容：用于区分本地路径 vs 远程地址；匹配 http(s)/ssh/git@、以 .git 结尾的形式、以及 `owner/repo` 简写。
     - 可简略：可能（启发式；但集中实现便于统一行为）。
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：规模≈16 行；引用次数≈5（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/repo_resolver.py:53；类型=function；引用≈5；规模≈16行
     s = str(repo or "").strip()
     if not s:
         return False
@@ -64,6 +72,10 @@ def is_probably_repo_url(repo: str) -> bool:
 
 def normalize_repo_url(repo: str) -> str:
     """Normalize shorthand forms into a git-cloneable URL."""
+    # 作用：Normalize shorthand forms into a git-cloneable URL.
+    # 能否简略：否
+    # 原因：规模≈11 行；引用次数≈2（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/repo_resolver.py:67；类型=function；引用≈2；规模≈11行
     # 中文说明：
     # - 含义：把 `owner/repo` 这种简写规范化为可 git clone 的 URL。
     # - 内容：目前默认映射到 GitHub HTTPS：`https://github.com/{owner/repo}.git`；其余输入保持不变。
@@ -81,6 +93,10 @@ def _repo_slug(repo_url: str) -> str:
     - 内容：提取 owner/repo（尽力），替换非法字符为 `_`，并限制长度；用于 `<clones_base>/<slug>_<ts>`。
     - 可简略：可能（命名策略可调整；但需要保持稳定与避免路径注入）。
     """
+    # 作用：中文说明：
+    # 能否简略：是
+    # 原因：规模≈18 行；引用次数≈2（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
+    # 证据：位置=runner/repo_resolver.py:84；类型=function；引用≈2；规模≈18行
     s = repo_url.strip().rstrip("/")
     if s.startswith("git@") and ":" in s:
         s = s.split(":", 1)[1]
@@ -101,6 +117,10 @@ def _parse_github_owner_repo(url: str) -> tuple[str, str] | None:
     - 内容：支持 https://github.com/owner/repo(.git)、git@github.com:owner/repo(.git)、ssh://git@github.com/owner/repo(.git)。
     - 可简略：可能（只为 GitHub ZIP fallback 服务；若去掉 fallback 可删除）。
     """
+    # 作用：中文说明：
+    # 能否简略：部分
+    # 原因：规模≈32 行；引用次数≈2（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
+    # 证据：位置=runner/repo_resolver.py:104；类型=function；引用≈2；规模≈32行
     s = str(url or "").strip()
     if not s:
         return None
@@ -142,6 +162,10 @@ def _download_file(
     - 内容：流式读取并写入；若超过 max_bytes 则中止；返回 (ok, err_str) 而不是抛错，便于上层聚合错误信息。
     - 可简略：否（repo 获取与 HF 下载都依赖；需要稳定的错误语义与限速/限量能力）。
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：规模≈44 行；引用次数≈3（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/repo_resolver.py:145；类型=function；引用≈3；规模≈44行
     try:
         h = {
             "User-Agent": "opencode-fsm/1.0",
@@ -181,6 +205,10 @@ def _extract_github_zip(zip_path: Path, *, extract_dir: Path, repo_name: str) ->
     - 内容：兼容 `repo-main/`、`repo-master/` 等目录结构；若结构不符合预期则抛错。
     - 可简略：是（仅 GitHub ZIP fallback 需要；若去掉 fallback 可删除）。
     """
+    # 作用：中文说明：
+    # 能否简略：部分
+    # 原因：规模≈23 行；引用次数≈2（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
+    # 证据：位置=runner/repo_resolver.py:184；类型=function；引用≈2；规模≈23行
     extract_dir.mkdir(parents=True, exist_ok=True)
     try:
         with zipfile.ZipFile(zip_path, "r") as zf:
@@ -206,6 +234,10 @@ def _parse_hf_dataset(url: str) -> tuple[str, str] | None:
     - 内容：匹配 `https://huggingface.co/datasets/<namespace>/<name>` 路径；用于触发“HF 快照下载”逻辑。
     - 可简略：是（只在需要支持 HF dataset URL 时才需要）。
     """
+    # 作用：中文说明：
+    # 能否简略：部分
+    # 原因：规模≈22 行；引用次数≈2（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
+    # 证据：位置=runner/repo_resolver.py:209；类型=function；引用≈2；规模≈22行
     u = str(url or "").strip()
     if not u.startswith(("http://", "https://")):
         return None
@@ -236,6 +268,10 @@ def _hf_dataset_api_info(
     - 内容：请求 `https://huggingface.co/api/datasets/{namespace}/{name}`；若提供 token 则加 Bearer；返回解析后的 dict。
     - 可简略：是（只在 HF dataset 支持场景需要）。
     """
+    # 作用：中文说明：
+    # 能否简略：部分
+    # 原因：规模≈23 行；引用次数≈2（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
+    # 证据：位置=runner/repo_resolver.py:239；类型=function；引用≈2；规模≈23行
     url = f"https://huggingface.co/api/datasets/{namespace}/{name}"
     headers: dict[str, str] = {"Accept": "application/json", "User-Agent": "opencode-fsm/1.0"}
     if token:
@@ -266,6 +302,10 @@ def _download_hf_dataset_snapshot(
     English (original intent):
     Download a Hugging Face dataset snapshot via the HF REST API (no git required).
     """
+    # 作用：中文说明：
+    # 能否简略：部分
+    # 原因：规模≈124 行；引用次数≈2（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
+    # 证据：位置=runner/repo_resolver.py:269；类型=function；引用≈2；规模≈124行
     if dest.exists():
         shutil.rmtree(dest, ignore_errors=True)
     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -387,6 +427,10 @@ def _archive_clone_github(
 
     Returns (ok, detail). On success, the repo is extracted into dest.
     """
+    # 作用：Best-effort fallback clone via GitHub archive zip.
+    # 能否简略：否
+    # 原因：规模≈65 行；引用次数≈2（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/repo_resolver.py:390；类型=function；引用≈2；规模≈65行
     # 中文说明：
     # - 含义：当 `git clone` 失败时，尝试通过 GitHub 的 archive zip 下载并解压作为 fallback。
     # - 内容：尝试 main/master 分支 zip；成功后初始化本地 git（用于 revert guards）。
@@ -449,6 +493,10 @@ class PreparedRepo:
     - 内容：当输入是远程 URL 时 cloned_from 会记录来源；当输入是本地路径时为 None。
     - 可简略：可能（字段很少；但作为清晰返回类型更利于测试/日志）。
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：规模≈9 行；引用次数≈8（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/repo_resolver.py:452；类型=class；引用≈8；规模≈9行
 
     repo: Path
     cloned_from: str | None = None
@@ -462,6 +510,10 @@ def _find_reusable_clone(base: Path, *, prefix: str) -> Path | None:
     We keep the behavior generic: no repo-specific knowledge, only directory naming
     conventions produced by this file.
     """
+    # 作用：Best-effort: reuse an existing clone/snapshot under `base` when available.
+    # 能否简略：否
+    # 原因：规模≈41 行；引用次数≈3（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/repo_resolver.py:465；类型=function；引用≈3；规模≈41行
     base = Path(base).expanduser().resolve()
     pref = str(prefix or "").strip()
     if not pref:
@@ -488,6 +540,10 @@ def _find_reusable_clone(base: Path, *, prefix: str) -> Path | None:
             continue
 
     def _mtime(path: Path) -> float:
+        # 作用：内部符号：_find_reusable_clone._mtime
+        # 能否简略：部分
+        # 原因：规模≈5 行；引用次数≈4（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
+        # 证据：位置=runner/repo_resolver.py:491；类型=function；引用≈4；规模≈5行
         try:
             return float(path.stat().st_mtime)
         except Exception:
@@ -506,6 +562,10 @@ def prepare_repo(repo_arg: str, *, clones_dir: Path | None = None) -> PreparedRe
       - 若是 HF dataset URL：走 HF API 下载快照
     - 可简略：否（runner 对“只给 URL”场景的核心入口；简化会大幅降低适配范围）。
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：规模≈116 行；引用次数≈12（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/repo_resolver.py:509；类型=function；引用≈12；规模≈116行
     raw = str(repo_arg or "").strip()
     if not raw:
         raise ValueError("--repo is required")

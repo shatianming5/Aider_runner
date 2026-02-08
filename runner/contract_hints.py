@@ -10,6 +10,10 @@ from typing import Any
 @dataclass(frozen=True)
 class ContractHints:
     """Best-effort command hints extracted from the repo itself (no hardcoding)."""
+    # 作用：Best-effort command hints extracted from the repo itself (no hardcoding).
+    # 能否简略：否
+    # 原因：规模≈5 行；引用次数≈5（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/contract_hints.py:13；类型=class；引用≈5；规模≈5行
 
     commands: list[str]
     anchors: list[str]
@@ -19,6 +23,10 @@ _FENCE_RE = re.compile(r"```[a-zA-Z0-9_-]*\n(?P<body>.*?)\n```", re.DOTALL)
 
 
 def _iter_md_paths(repo: Path, *, max_files: int) -> list[Path]:
+    # 作用：内部符号：_iter_md_paths
+    # 能否简略：是
+    # 原因：规模≈7 行；引用次数≈2（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
+    # 证据：位置=runner/contract_hints.py:22；类型=function；引用≈2；规模≈7行
     repo = Path(repo).resolve()
     md_paths: list[Path] = []
     for pat in ("README*.md", "docs/**/*.md"):
@@ -28,6 +36,10 @@ def _iter_md_paths(repo: Path, *, max_files: int) -> list[Path]:
 
 
 def _iter_workflow_paths(repo: Path, *, max_files: int) -> list[Path]:
+    # 作用：内部符号：_iter_workflow_paths
+    # 能否简略：是
+    # 原因：规模≈10 行；引用次数≈2（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
+    # 证据：位置=runner/contract_hints.py:31；类型=function；引用≈2；规模≈10行
     repo = Path(repo).resolve()
     wf_root = (repo / ".github" / "workflows").resolve()
     if not wf_root.exists():
@@ -40,6 +52,10 @@ def _iter_workflow_paths(repo: Path, *, max_files: int) -> list[Path]:
 
 
 def _yaml_safe_load(text: str) -> Any | None:
+    # 作用：内部符号：_yaml_safe_load
+    # 能否简略：是
+    # 原因：规模≈9 行；引用次数≈2（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
+    # 证据：位置=runner/contract_hints.py:43；类型=function；引用≈2；规模≈9行
     try:
         import yaml  # type: ignore
     except Exception:
@@ -52,6 +68,10 @@ def _yaml_safe_load(text: str) -> Any | None:
 
 def _extract_workflow_run_scripts(text: str) -> list[str]:
     """Extract `run:` scripts from GitHub Actions workflow YAML (best-effort)."""
+    # 作用：Extract `run:` scripts from GitHub Actions workflow YAML (best-effort).
+    # 能否简略：部分
+    # 原因：规模≈26 行；引用次数≈2（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
+    # 证据：位置=runner/contract_hints.py:55；类型=function；引用≈2；规模≈26行
     data = _yaml_safe_load(text)
     if not isinstance(data, dict):
         return []
@@ -80,6 +100,10 @@ def _extract_workflow_run_scripts(text: str) -> list[str]:
 
 def _split_script_lines(script: str) -> list[str]:
     """Normalize a script block into non-empty lines (keep `\\` continuations)."""
+    # 作用：Normalize a script block into non-empty lines (keep `\` continuations).
+    # 能否简略：是
+    # 原因：规模≈9 行；引用次数≈2（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
+    # 证据：位置=runner/contract_hints.py:83；类型=function；引用≈2；规模≈9行
     out: list[str] = []
     for raw in str(script or "").splitlines():
         line = raw.strip()
@@ -91,6 +115,10 @@ def _split_script_lines(script: str) -> list[str]:
 
 def _join_with_continuations(lines: list[str]) -> list[str]:
     """Join lines that use `\\` continuation into single commands."""
+    # 作用：Join lines that use `\` continuation into single commands.
+    # 能否简略：是
+    # 原因：规模≈18 行；引用次数≈2（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
+    # 证据：位置=runner/contract_hints.py:94；类型=function；引用≈2；规模≈18行
     out: list[str] = []
     cur = ""
     for line in lines:
@@ -124,6 +152,10 @@ def _extract_workflow_candidates(
       also prepend a small prelude of preceding run steps (up to 3). This captures
       common setup (e.g., `docker build` before `docker run ... pytest`).
     """
+    # 作用：Best-effort: extract runnable-ish command scripts from CI workflows.
+    # 能否简略：否
+    # 原因：规模≈57 行；引用次数≈2（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/contract_hints.py:127；类型=function；引用≈2；规模≈57行
     repo = Path(repo).resolve()
     out: list[str] = []
     seen: set[str] = set()
@@ -169,6 +201,10 @@ def _extract_workflow_candidates(
 
 
 def _tokenize_hint(cmd: str) -> list[str]:
+    # 作用：内部符号：_tokenize_hint
+    # 能否简略：是
+    # 原因：规模≈6 行；引用次数≈2（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
+    # 证据：位置=runner/contract_hints.py:172；类型=function；引用≈2；规模≈6行
     try:
         return shlex.split(cmd)
     except Exception:
@@ -181,6 +217,10 @@ def _extract_anchors(hints: list[str]) -> list[str]:
 
     This is intentionally heuristic and benchmark-agnostic.
     """
+    # 作用：Extract high-signal tokens we can use to audit "did you use doc hints?".
+    # 能否简略：否
+    # 原因：规模≈96 行；引用次数≈4（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/contract_hints.py:184；类型=function；引用≈4；规模≈96行
     skip_first = {
         "bash",
         "sh",
@@ -280,6 +320,10 @@ def suggest_contract_hints(repo: Path, *, max_files: int = 8, max_candidates: in
     - Generic: only uses repo content; no benchmark-specific logic.
     - Best-effort: returns an empty list if nothing is found.
     """
+    # 作用：Extract candidate evaluation/benchmark commands from repo docs.
+    # 能否简略：否
+    # 原因：规模≈86 行；引用次数≈11（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/contract_hints.py:283；类型=function；引用≈11；规模≈86行
     md_paths = _iter_md_paths(repo, max_files=max_files)
 
     interest_re = re.compile(

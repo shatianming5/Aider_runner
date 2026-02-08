@@ -14,6 +14,10 @@ def make_plan_update_prompt(snapshot_text: str, test_cmd: str, *, extra: str = "
     - 内容：描述 tool-call 协议、硬约束（只能改 PLAN.md、Next 必须只有一个未完成项、Acceptance 必须包含 TEST_CMD 等），并把 snapshot 作为事实输入注入。
     - 可简略：否（提示词是安全边界的一部分；简化可能导致越权修改或不可解析计划）。
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：规模≈40 行；引用次数≈1（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/prompts.py:17；类型=function；引用≈1；规模≈40行
     extra = extra.strip()
     extra_block = f"\n[EXTRA]\n{extra}\n" if extra else ""
     return (
@@ -56,6 +60,10 @@ def make_execute_prompt(snapshot_text: str, step: dict[str, str]) -> str:
     - 内容：要求 agent 不做额外 refactor、不改 PLAN/pipeline；允许通过 tool-call 读写文件/跑命令来完成单一实现任务。
     - 可简略：否（提示词强约束用于避免范围蔓延与越权修改）。
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：规模≈30 行；引用次数≈1（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/prompts.py:59；类型=function；引用≈1；规模≈30行
     return (
         "You are a strict executor. Your job: implement ONLY the single `Next` step.\n"
         "\n"
@@ -94,6 +102,10 @@ def make_scaffold_contract_prompt(
     - 内容：强制要求 pipeline v1 schema；只允许写 `pipeline.yml` 与 `.aider_fsm/**`；要求 deploy/setup 产出 `.aider_fsm/runtime_env.json`，并使 rollout/evaluation 能在读取该 env 的前提下自动执行与落盘。
     - 可简略：否（这是“只给 URL 也能跑”的关键能力与安全边界；同时避免在 runner 里写 benchmark-specific 逻辑）。
     """
+    # 作用：中文说明：
+    # 能否简略：部分
+    # 原因：规模≈233 行；引用次数≈9（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
+    # 证据：位置=runner/prompts.py:97；类型=function；引用≈9；规模≈233行
     # For contract runs we want to avoid "silent placeholders". Requiring an explicit `ok` flag
     # makes it easier for downstream automation (and humans) to distinguish real scores vs fallbacks.
     required_keys = ["score", "ok"] if require_metrics else []
@@ -328,6 +340,10 @@ def make_scaffold_contract_retry_prompt(
     command_hints: list[str] | None = None,
 ) -> str:
     """Build a stricter retry prompt when the previous scaffold attempt produced no valid contract."""
+    # 作用：Build a stricter retry prompt when the previous scaffold attempt produced no valid contract.
+    # 能否简略：否
+    # 原因：规模≈38 行；引用次数≈5（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/prompts.py:331；类型=function；引用≈5；规模≈38行
     base = make_scaffold_contract_prompt(
         repo,
         pipeline_rel=pipeline_rel,
@@ -369,6 +385,10 @@ def make_fix_or_replan_prompt(
     - 内容：注入失败 stage、tests_cmd、artifacts_dir 与 stdout/stderr tail；允许 agent 选择修复或仅编辑 PLAN.md 标记 Blocked/拆分。
     - 可简略：否（失败闭环的关键提示词；缺少上下文会降低修复成功率）。
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：规模≈60 行；引用次数≈1（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/prompts.py:372；类型=function；引用≈1；规模≈60行
     metrics_errors = verify.metrics_errors or []
     metrics_block = ""
     if verify.metrics_path or metrics_errors:
@@ -425,6 +445,10 @@ def make_mark_done_prompt(step: dict[str, str]) -> str:
     - 内容：要求只改 PLAN.md：把 Next 的 step 移到 Done 并勾选；从 Backlog 选一个最小项放入 Next（保持 Next 只有一项）。
     - 可简略：可能（相对短；但保留专用提示词让流程更稳定）。
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：规模≈12 行；引用次数≈1（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/prompts.py:428；类型=function；引用≈1；规模≈12行
     return (
         "This step passed verification. ONLY edit PLAN.md:\n"
         f"1) Move `- [ ] (STEP_ID={step['id']}) ...` from Next to Done, and change it to `- [x]`.\n"
@@ -439,6 +463,10 @@ def make_block_step_prompt(step: dict[str, str], last_failure: str) -> str:
     - 内容：要求只改 PLAN.md：把 step 从 Next 移除并在 Notes 说明阻塞原因/需要的人类输入；同时注入最近一次失败输出尾部。
     - 可简略：可能（短提示词；但将 Blocked 流程显式化可避免死循环）。
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：规模≈16 行；引用次数≈1（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/prompts.py:442；类型=function；引用≈1；规模≈16行
     return (
         "Fix attempts exceeded the limit. ONLY edit PLAN.md:\n"
         "1) Remove the step from Next; in Notes, explain why it's Blocked and what human input is needed.\n"

@@ -12,6 +12,10 @@ from .subprocess_utils import tail
 
 
 def _read_text_tail(path: Path, *, n: int) -> str:
+    # 作用：内部符号：_read_text_tail
+    # 能否简略：否
+    # 原因：规模≈5 行；引用次数≈21（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/contract_repair.py:15；类型=function；引用≈21；规模≈5行
     try:
         return tail(path.read_text(encoding="utf-8", errors="replace"), n)
     except Exception:
@@ -20,6 +24,10 @@ def _read_text_tail(path: Path, *, n: int) -> str:
 
 def _build_contract_validation_snapshot(repo: Path) -> str:
     """Best-effort snapshot of current scaffold contract validity for repair prompts."""
+    # 作用：Best-effort snapshot of current scaffold contract validity for repair prompts.
+    # 能否简略：部分
+    # 原因：规模≈24 行；引用次数≈2（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
+    # 证据：位置=runner/contract_repair.py:23；类型=function；引用≈2；规模≈24行
     repo = Path(repo).resolve()
     pipeline_path = (repo / "pipeline.yml").resolve()
     if not pipeline_path.exists():
@@ -51,6 +59,10 @@ def _bootstrap_artifacts_tail(deploy_artifacts_dir: Path) -> str:
     is often empty/missing. Showing the failing bootstrap cmd helps the repair agent
     remove/adjust the problematic bootstrap steps.
     """
+    # 作用：Best-effort: extract the most relevant bootstrap failure details from artifacts.
+    # 能否简略：否
+    # 原因：规模≈43 行；引用次数≈2（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/contract_repair.py:54；类型=function；引用≈2；规模≈43行
     deploy_artifacts_dir = Path(deploy_artifacts_dir).resolve()
     bdir = (deploy_artifacts_dir / "bootstrap").resolve()
     if not bdir.exists():
@@ -68,6 +80,10 @@ def _bootstrap_artifacts_tail(deploy_artifacts_dir: Path) -> str:
         stderr_paths = []
 
     def _mtime(p: Path) -> float:
+        # 作用：内部符号：_bootstrap_artifacts_tail._mtime
+        # 能否简略：部分
+        # 原因：规模≈5 行；引用次数≈4（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
+        # 证据：位置=runner/contract_repair.py:71；类型=function；引用≈4；规模≈5行
         try:
             return float(p.stat().st_mtime)
         except Exception:
@@ -115,6 +131,10 @@ def repair_contract(
     - may ONLY write `.aider_fsm/**`
     - may NOT modify `pipeline.yml`
     """
+    # 作用：Ask OpenCode to repair the repo-local contract under `.aider_fsm/` (best-effort).
+    # 能否简略：部分
+    # 原因：规模≈292 行；引用次数≈10（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
+    # 证据：位置=runner/contract_repair.py:118；类型=function；引用≈10；规模≈292行
     artifacts_dir.mkdir(parents=True, exist_ok=True)
     oc_username = None
     oc_password = None

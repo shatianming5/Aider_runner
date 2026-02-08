@@ -11,6 +11,10 @@ class AgentResult:
     - 内容：包含 assistant 输出文本（用于解析 tool-calls 或作为最终回复），以及可选 raw（底层响应对象，便于调试）。
     - 可简略：可能（字段很少；但作为稳定边界类型有助于测试与替换不同 agent 后端）。
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：规模≈10 行；引用次数≈9（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/agent_client.py:14；类型=class；引用≈9；规模≈10行
 
     assistant_text: str
     raw: Any | None = None
@@ -23,6 +27,10 @@ class AgentClient(Protocol):
     - 内容：Runner 只依赖 `run()`（一次对话/一次任务）与 `close()`（资源回收）；具体实现可对接 OpenCode server 或其它实现。
     - 可简略：否（这是解耦边界；去掉会导致 runner 强绑定某个实现）。
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：规模≈24 行；引用次数≈6（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/agent_client.py:26；类型=class；引用≈6；规模≈24行
 
     def run(self, text: str, *, fsm_state: str, iter_idx: int, purpose: str) -> AgentResult:
         """中文说明：
@@ -30,6 +38,10 @@ class AgentClient(Protocol):
         - 内容：`fsm_state/iter_idx/purpose` 用于日志与策略（例如 scaffold 合同阶段允许更高 bash 权限）。
         - 可简略：否（核心协议方法；参数也用于审计/安全策略）。
         """
+        # 作用：中文说明：
+        # 能否简略：否
+        # 原因：规模≈8 行；引用次数≈29（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+        # 证据：位置=runner/agent_client.py:33；类型=method；引用≈29；规模≈8行
 
         ...
 
@@ -39,5 +51,9 @@ class AgentClient(Protocol):
         - 内容：通常在 runner 退出或完成一次独立任务后调用。
         - 可简略：可能（某些实现可以是 no-op，但接口应保留）。
         """
+        # 作用：中文说明：
+        # 能否简略：否
+        # 原因：规模≈8 行；引用次数≈10（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+        # 证据：位置=runner/agent_client.py:42；类型=method；引用≈10；规模≈8行
 
         ...

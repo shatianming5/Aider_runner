@@ -22,6 +22,10 @@ from .subprocess_utils import tail
 
 def _looks_like_transport_unavailable(detail: str) -> bool:
     """Best-effort classification for transient transport failures."""
+    # 作用：Best-effort classification for transient transport failures.
+    # 能否简略：是
+    # 原因：规模≈19 行；引用次数≈2（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
+    # 证据：位置=runner/opencode_client.py:25；类型=function；引用≈2；规模≈19行
     d = str(detail or "").strip().lower()
     if not d:
         return False
@@ -47,6 +51,10 @@ def _normalize_base_url(url: str) -> str:
     - 内容：用于把用户传入的 `--opencode-url` 或内部启动的 base_url 统一成可拼接 path 的形式。
     - 可简略：可能（小工具；但集中做输入清洗更可靠）。
     """
+    # 作用：中文说明：
+    # 能否简略：是
+    # 原因：规模≈10 行；引用次数≈2（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
+    # 证据：位置=runner/opencode_client.py:50；类型=function；引用≈2；规模≈10行
     s = str(url or "").strip()
     if not s:
         raise ValueError("empty_url")
@@ -59,6 +67,10 @@ def _basic_auth_value(username: str, password: str) -> str:
     - 内容：`base64(username:password)`，用于访问带密码的 OpenCode server。
     - 可简略：可能（工具函数；但集中实现便于测试与避免拼写错误）。
     """
+    # 作用：中文说明：
+    # 能否简略：是
+    # 原因：规模≈8 行；引用次数≈2（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
+    # 证据：位置=runner/opencode_client.py:62；类型=function；引用≈2；规模≈8行
     token = base64.b64encode(f"{username}:{password}".encode("utf-8")).decode("ascii")
     return f"Basic {token}"
 
@@ -69,6 +81,10 @@ def _split_model(model: str) -> tuple[str, str]:
     - 内容：空字符串回退到 `openai/gpt-4o-mini`；只有模型名时默认 provider=openai。
     - 可简略：可能（与 CLI/env_local 的模型解析存在重复；可抽公共模块）。
     """
+    # 作用：中文说明：
+    # 能否简略：是
+    # 原因：规模≈15 行；引用次数≈2（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
+    # 证据：位置=runner/opencode_client.py:72；类型=function；引用≈2；规模≈15行
     s = str(model or "").strip()
     if not s:
         return "openai", "gpt-4o-mini"
@@ -86,6 +102,10 @@ def select_bash_mode(*, purpose: str, default_bash_mode: str, scaffold_bash_mode
     - 内容：当 purpose==scaffold_contract 时允许用单独的 scaffold_bash_mode（通常更宽松以便生成合同文件）；其它情况用 default_bash_mode。
     - 可简略：可能（小策略函数；但把规则集中有利于审计）。
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：规模≈12 行；引用次数≈8（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/opencode_client.py:89；类型=function；引用≈8；规模≈12行
     p = str(purpose or "").strip().lower()
     default = str(default_bash_mode or "restricted").strip().lower() or "restricted"
     scaffold = str(scaffold_bash_mode or default).strip().lower() or default
@@ -100,6 +120,10 @@ def _extract_assistant_text(message: Any) -> str:
     - 内容：兼容 message 非 dict 或 parts 格式不符的情况；用于后续解析 tool-calls 或作为最终回答。
     - 可简略：可能（依赖 OpenCode 返回结构；集中封装更利于兼容不同版本）。
     """
+    # 作用：中文说明：
+    # 能否简略：是
+    # 原因：规模≈18 行；引用次数≈2（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
+    # 证据：位置=runner/opencode_client.py:103；类型=function；引用≈2；规模≈18行
     if not isinstance(message, dict):
         return str(message)
     parts = message.get("parts")
@@ -120,6 +144,10 @@ def _extract_opencode_error(message: Any) -> str | None:
     - 内容：读取 `message.info.error`，把 name/message 合成为人类可读字符串；用于 fail-fast。
     - 可简略：可能（兼容性/可读性辅助；但保留能提升错误诊断体验）。
     """
+    # 作用：中文说明：
+    # 能否简略：部分
+    # 原因：规模≈24 行；引用次数≈2（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
+    # 证据：位置=runner/opencode_client.py:123；类型=function；引用≈2；规模≈24行
     if not isinstance(message, dict):
         return None
     info = message.get("info")
@@ -147,6 +175,10 @@ class OpenCodeServerConfig:
     - 内容：当 runner 自己启动本地 server 时会生成随机 password；也支持连接外部 server（用户提供 base_url/username/password）。
     - 可简略：可能（字段很少；但作为显式结构便于传递与测试）。
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：规模≈10 行；引用次数≈4（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/opencode_client.py:150；类型=class；引用≈4；规模≈10行
 
     base_url: str
     username: str
@@ -159,6 +191,10 @@ class OpenCodeRequestError(RuntimeError):
     - 内容：用于把 HTTPError/URLError 统一包装成稳定异常类型，方便上层做兼容性回退或报错。
     - 可简略：否（稳定错误类型对诊断与测试很重要）。
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：规模≈18 行；引用次数≈18（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/opencode_client.py:162；类型=class；引用≈18；规模≈18行
 
     def __init__(self, *, method: str, url: str, status: int | None, detail: str):
         """中文说明：
@@ -166,6 +202,10 @@ class OpenCodeRequestError(RuntimeError):
         - 内容：把 method/url/status/detail 写入属性，便于调用方判断（如 400/422 时做 model 字段兼容回退）。
         - 可简略：可能（实现简单；但建议保留属性字段以便调试）。
         """
+        # 作用：中文说明：
+        # 能否简略：是
+        # 原因：规模≈11 行；引用次数≈1（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
+        # 证据：位置=runner/opencode_client.py:169；类型=method；引用≈1；规模≈11行
         super().__init__(f"OpenCode request failed: {method} {url} ({status}) {detail}")
         self.method = method
         self.url = url
@@ -179,6 +219,10 @@ class OpenCodeClient(AgentClient):
     - 内容：可连接外部 OpenCode server，也可在 repo 内自动启动 `opencode serve`；每次 `run()` 发送消息、解析 tool-calls、由 runner 执行并回灌结果，直到拿到最终文本。
     - 可简略：否（这是当前项目的核心 agent 适配层）。
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：规模≈542 行；引用次数≈21（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/opencode_client.py:182；类型=class；引用≈21；规模≈542行
 
     def __init__(
         self,
@@ -208,6 +252,10 @@ class OpenCodeClient(AgentClient):
         - 内容：当 `base_url` 为空时会启动本地 server 进程并写日志；随后创建 session 并保留 session_id；bash 权限由 bash_mode/scaffold_bash_mode 与 purpose 共同决定。
         - 可简略：否（涉及进程管理/认证/兼容性与关键默认值）。
         """
+        # 作用：中文说明：
+        # 能否简略：否
+        # 原因：规模≈105 行；引用次数≈1（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+        # 证据：位置=runner/opencode_client.py:211；类型=method；引用≈1；规模≈105行
         self._repo = repo
         self._plan_rel = str(plan_rel or "PLAN.md").strip() or "PLAN.md"
         self._pipeline_rel = str(pipeline_rel).strip() if pipeline_rel else None
@@ -292,6 +340,10 @@ class OpenCodeClient(AgentClient):
         - 内容：尝试调用 `/instance/dispose`；若是本地启动的 server，则 terminate/kill 进程并关闭日志文件句柄。
         - 可简略：否（避免后台进程泄漏）。
         """
+        # 作用：中文说明：
+        # 能否简略：否
+        # 原因：规模≈13 行；引用次数≈10（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+        # 证据：位置=runner/opencode_client.py:295；类型=method；引用≈10；规模≈13行
         self._stop_local_server()
         if self._server_log_file is not None:
             try:
@@ -302,6 +354,10 @@ class OpenCodeClient(AgentClient):
 
     def _stop_local_server(self) -> None:
         """Best-effort stop for locally-owned OpenCode server process."""
+        # 作用：Best-effort stop for locally-owned OpenCode server process.
+        # 能否简略：部分
+        # 原因：规模≈36 行；引用次数≈2（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
+        # 证据：位置=runner/opencode_client.py:305；类型=method；引用≈2；规模≈36行
         if self._proc is not None:
             try:
                 # Do not block shutdown on a potentially wedged server.
@@ -343,6 +399,10 @@ class OpenCodeClient(AgentClient):
         - 内容：发送 prompt → 获取 assistant 输出 → 解析 tool-calls → 执行并回灌 `tool_result` → 重复最多 20 轮；若无 tool-call 则直接返回最终文本。
         - 可简略：否（tool loop 是闭环能力的核心实现）。
         """
+        # 作用：中文说明：
+        # 能否简略：否
+        # 原因：规模≈95 行；引用次数≈29（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+        # 证据：位置=runner/opencode_client.py:346；类型=method；引用≈29；规模≈95行
         policy = ToolPolicy(
             repo=self._repo.resolve(),
             plan_path=(self._repo / self._plan_rel).resolve(),
@@ -446,6 +506,10 @@ class OpenCodeClient(AgentClient):
         - 内容：选择一个空闲端口；生成随机 password；设置 OPENCODE_SERVER_* 环境变量；可选写 server log 到 artifacts。
         - 可简略：否（进程/端口/认证管理是关键；实现需要谨慎）。
         """
+        # 作用：中文说明：
+        # 能否简略：否
+        # 原因：规模≈60 行；引用次数≈2（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+        # 证据：位置=runner/opencode_client.py:449；类型=method；引用≈2；规模≈60行
         if not shutil.which("opencode"):
             raise RuntimeError("`opencode` not found in PATH. Install it from https://opencode.ai/")
 
@@ -500,6 +564,10 @@ class OpenCodeClient(AgentClient):
         - 内容：轮询 `/global/health` 最多约 20 秒；失败则抛错并包含最近一次错误尾部。
         - 可简略：可能（轮询参数可配置；但保留健康检查可避免后续难以理解的失败）。
         """
+        # 作用：中文说明：
+        # 能否简略：是
+        # 原因：规模≈16 行；引用次数≈2（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
+        # 证据：位置=runner/opencode_client.py:503；类型=method；引用≈2；规模≈16行
         deadline = time.time() + 60
         last_err = ""
         while time.time() < deadline:
@@ -517,6 +585,10 @@ class OpenCodeClient(AgentClient):
         - 内容：兼容不同字段命名（`id` 或 `sessionID`）；若响应不符合预期则抛错并附带 JSON 尾部。
         - 可简略：可能（主要是兼容性处理；但对不同 OpenCode 版本很有用）。
         """
+        # 作用：中文说明：
+        # 能否简略：是
+        # 原因：规模≈13 行；引用次数≈2（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
+        # 证据：位置=runner/opencode_client.py:520；类型=method；引用≈2；规模≈13行
         body = {"title": title}
         data = self._request_json("POST", "/session", body=body, require_auth=bool(self._server.password))
         if isinstance(data, dict) and isinstance(data.get("id"), str) and data["id"].strip():
@@ -531,6 +603,10 @@ class OpenCodeClient(AgentClient):
         - 内容：delay = base * 2^(attempt_idx-1)，并限制到 30 秒，避免无上限等待。
         - 可简略：可能（简单策略函数；但集中处理更便于调参与测试）。
         """
+        # 作用：中文说明：
+        # 能否简略：是
+        # 原因：规模≈12 行；引用次数≈1（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
+        # 证据：位置=runner/opencode_client.py:534；类型=method；引用≈1；规模≈12行
         base = float(self._request_retry_backoff_seconds or 0.0)
         if base <= 0:
             return
@@ -539,6 +615,10 @@ class OpenCodeClient(AgentClient):
             time.sleep(delay)
 
     def _sleep_session_recover_backoff(self, *, recover_idx: int) -> None:
+        # 作用：内部符号：OpenCodeClient._sleep_session_recover_backoff
+        # 能否简略：是
+        # 原因：规模≈7 行；引用次数≈1（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
+        # 证据：位置=runner/opencode_client.py:542；类型=method；引用≈1；规模≈7行
         base = float(self._session_recover_backoff_seconds or 0.0)
         if base <= 0:
             return
@@ -547,12 +627,20 @@ class OpenCodeClient(AgentClient):
             time.sleep(delay)
 
     def _is_transport_unavailable_error(self, err: OpenCodeRequestError) -> bool:
+        # 作用：内部符号：OpenCodeClient._is_transport_unavailable_error
+        # 能否简略：是
+        # 原因：规模≈4 行；引用次数≈1（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
+        # 证据：位置=runner/opencode_client.py:550；类型=method；引用≈1；规模≈4行
         if err.status is not None:
             return False
         return _looks_like_transport_unavailable(err.detail)
 
     def _recover_local_server_session(self, *, reason: str) -> None:
         """Restart local OpenCode server and create a fresh session."""
+        # 作用：Restart local OpenCode server and create a fresh session.
+        # 能否简略：是
+        # 原因：规模≈18 行；引用次数≈1（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
+        # 证据：位置=runner/opencode_client.py:556；类型=method；引用≈1；规模≈18行
         if not self._owns_local_server:
             raise RuntimeError("session_recover_not_local_server")
         username = (
@@ -576,6 +664,10 @@ class OpenCodeClient(AgentClient):
         - 内容：网络类（status=None）以及常见瞬时 HTTP 错误（408/409/425/429/5xx）会重试。
         - 可简略：可能（也可在调用点内联；集中定义更可维护）。
         """
+        # 作用：中文说明：
+        # 能否简略：是
+        # 原因：规模≈15 行；引用次数≈1（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
+        # 证据：位置=runner/opencode_client.py:579；类型=method；引用≈1；规模≈15行
         if err.status is None:
             return True
         try:
@@ -592,6 +684,10 @@ class OpenCodeClient(AgentClient):
         - 内容：未设置 `max_prompt_chars` 时不裁剪；裁剪时插入标记便于定位。
         - 可简略：可能（可直接尾裁剪；但头尾保留更稳妥）。
         """
+        # 作用：中文说明：
+        # 能否简略：是
+        # 原因：规模≈16 行；引用次数≈1（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
+        # 证据：位置=runner/opencode_client.py:595；类型=method；引用≈1；规模≈16行
         s = str(text or "")
         cap = self._max_prompt_chars
         if cap is None or cap <= 0 or len(s) <= cap:
@@ -609,6 +705,10 @@ class OpenCodeClient(AgentClient):
         - 内容：支持 `request_retry_attempts` + 指数退避；若 `contextLength` 字段不被服务端接受，会自动降级重发一次。
         - 可简略：否（是提升 scaffold/repair 稳定性的关键逻辑）。
         """
+        # 作用：中文说明：
+        # 能否简略：否
+        # 原因：规模≈46 行；引用次数≈4（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+        # 证据：位置=runner/opencode_client.py:612；类型=method；引用≈4；规模≈46行
         attempts = 1 + int(self._request_retry_attempts or 0)
         include_context = True
         last_err: OpenCodeRequestError | None = None
@@ -656,6 +756,10 @@ class OpenCodeClient(AgentClient):
         - 内容：body 里包含 agent 类型、model、parts；由 `_request_json` 完成 HTTP 细节与错误包装。
         - 可简略：可能（薄封装；但把请求体结构集中在一处更易维护）。
         """
+        # 作用：中文说明：
+        # 能否简略：部分
+        # 原因：规模≈27 行；引用次数≈2（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
+        # 证据：位置=runner/opencode_client.py:659；类型=method；引用≈2；规模≈27行
         clipped_text = self._clip_prompt_text(text)
         body = {
             "agent": "build",
@@ -684,6 +788,10 @@ class OpenCodeClient(AgentClient):
         - 内容：支持可选 Basic Auth；body 会被编码为 JSON；HTTPError/URLError 会被包装为 OpenCodeRequestError（截断 detail 以控制体积）。
         - 可简略：否（HTTP I/O 与错误处理的核心封装；影响稳定性与可诊断性）。
         """
+        # 作用：中文说明：
+        # 能否简略：部分
+        # 原因：规模≈37 行；引用次数≈4（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
+        # 证据：位置=runner/opencode_client.py:687；类型=method；引用≈4；规模≈37行
         url = f"{self._server.base_url}{path}"
         headers = {"Accept": "application/json"}
         if require_auth and self._server.password:

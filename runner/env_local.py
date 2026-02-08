@@ -28,6 +28,10 @@ from .types import VerificationResult
 
 
 def _classify_opencode_transport_error(err_text: str) -> str:
+    # 作用：内部符号：_classify_opencode_transport_error
+    # 能否简略：是
+    # 原因：规模≈18 行；引用次数≈3（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
+    # 证据：位置=runner/env_local.py:31；类型=function；引用≈3；规模≈18行
     low = str(err_text or "").strip().lower()
     if not low:
         return ""
@@ -54,6 +58,10 @@ class EnvHandle:
     - 内容：包含目标 repo 根目录、pipeline.yml 路径与解析后的 PipelineSpec；供 rollout/evaluate API 复用。
     - 可简略：可能（只是数据载体；但显式结构便于类型检查与扩展）。
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：规模≈10 行；引用次数≈19（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/env_local.py:57；类型=class；引用≈19；规模≈10行
 
     repo: Path
     pipeline_path: Path
@@ -67,6 +75,10 @@ class RolloutCallResult:
     - 内容：包含 ok、artifacts_dir、可选 rollout.json 路径，以及完整 VerificationResult（便于读取 stage 结果与 stdout/stderr）。
     - 可简略：可能（对外 API 结果结构；可以裁字段但会影响调用方兼容性）。
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：规模≈11 行；引用次数≈12（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/env_local.py:70；类型=class；引用≈12；规模≈11行
 
     ok: bool
     artifacts_dir: Path
@@ -81,6 +93,10 @@ class EvaluationCallResult:
     - 内容：包含 ok、artifacts_dir、metrics_path 与解析后的 metrics dict，以及完整 VerificationResult。
     - 可简略：可能（对外 API 结果结构；可以裁字段但会影响调用方兼容性）。
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：规模≈12 行；引用次数≈13（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/env_local.py:84；类型=class；引用≈13；规模≈12行
 
     ok: bool
     artifacts_dir: Path
@@ -96,6 +112,10 @@ class DeployCallResult:
     - 内容：包含 ok、artifacts_dir、runtime_env.json 路径与解析后的 runtime_env dict，以及完整 VerificationResult。
     - 可简略：可能（对外 API 结果结构；字段可裁剪但会影响调用方兼容性）。
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：规模≈12 行；引用次数≈5（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/env_local.py:99；类型=class；引用≈5；规模≈12行
 
     ok: bool
     artifacts_dir: Path
@@ -110,6 +130,10 @@ def _default_artifacts_dir(repo: Path, *, prefix: str) -> Path:
     - 内容：路径为 `.aider_fsm/artifacts/<run_id>/<prefix>`；run_id 使用当前时间戳。
     - 可简略：可能（小工具；但统一目录结构有利于审计与调试）。
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：规模≈8 行；引用次数≈7（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/env_local.py:113；类型=function；引用≈7；规模≈8行
     run_id = time.strftime("%Y%m%d_%H%M%S", time.localtime())
     return (repo / ".aider_fsm" / "artifacts" / run_id / prefix).resolve()
 
@@ -120,6 +144,10 @@ def _list_opencode_models() -> list[str]:
     - 内容：用于默认模型选择与把裸模型名解析到 provider/model。
     - 可简略：是（与 `runner/cli.py` 重复，可抽公共模块）。
     """
+    # 作用：中文说明：
+    # 能否简略：部分
+    # 原因：规模≈28 行；引用次数≈4（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
+    # 证据：位置=runner/env_local.py:123；类型=function；引用≈4；规模≈28行
     if not shutil.which("opencode"):
         return []
     try:
@@ -150,6 +178,10 @@ def _resolve_model(raw_model: str) -> str:
     - 内容：优先选择本机可用的默认模型；裸模型名会尝试在 `opencode models` 中匹配 provider（优先 myproxy）；最终回退到 openai/<id>。
     - 可简略：是（与 `runner/cli.py` 重复，可抽公共模块）。
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：规模≈58 行；引用次数≈3（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/env_local.py:153；类型=function；引用≈3；规模≈58行
     s = str(raw_model or "").strip()
     if not s:
         env_default = str(
@@ -238,6 +270,10 @@ def open_env(
       4) 返回 EnvHandle（repo/pipeline_path/pipeline）
     - 可简略：否（这是 programmatic API 的入口胶水层）。
     """
+    # 作用：中文说明：
+    # 能否简略：部分
+    # 原因：规模≈279 行；引用次数≈8（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
+    # 证据：位置=runner/env_local.py:241；类型=function；引用≈8；规模≈279行
     prepared = prepare_repo(str(repo), clones_dir=clones_dir)
     repo_root = prepared.repo.resolve()
     pipeline_path = (repo_root / str(pipeline_rel)).resolve()
@@ -264,6 +300,10 @@ def open_env(
             last_failure_reason = ""
 
             def _write_scaffold_provenance() -> None:
+                # 作用：内部符号：open_env._write_scaffold_provenance
+                # 能否简略：部分
+                # 原因：规模≈18 行；引用次数≈5（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
+                # 证据：位置=runner/env_local.py:267；类型=function；引用≈5；规模≈18行
                 nonlocal provenance_written
                 if provenance_written:
                     return
@@ -491,6 +531,10 @@ def _merge_env(base: dict[str, str], overrides: dict[str, str] | None) -> dict[s
     - 内容：用于把调用方传入的 `env_overrides` 合并到 pipeline 的 stage env 中。
     - 可简略：可能（简单 merge；但单独函数能让调用点更清晰）。
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：规模≈10 行；引用次数≈9（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/env_local.py:494；类型=function；引用≈9；规模≈10行
     out = dict(base or {})
     if overrides:
         out.update({str(k): str(v) for k, v in overrides.items()})
@@ -511,6 +555,10 @@ def _stage_only_pipeline(
     - 内容：保留 security 限制；按需要保留 rollout/evaluation/benchmark 的 run_cmds 与 metrics 校验配置；并把 env_overrides 合并到各 stage 的 env。
     - 可简略：可能（programmatic 专用；也可直接在调用点构造，但会很冗长）。
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：规模≈55 行；引用次数≈5（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/env_local.py:514；类型=function；引用≈5；规模≈55行
     env_overrides = env_overrides or {}
     return PipelineSpec(
         # security
@@ -567,6 +615,10 @@ def rollout(
     - 内容：构造 stage-only pipeline（rollout=true）；可选先执行 `.aider_fsm/bootstrap.yml`；然后调用 `run_pipeline_verification`（tests 用 echo 跳过）并返回 RolloutCallResult。
     - 可简略：可能（与 evaluate/rollout_and_evaluate 结构相似，可进一步抽公共逻辑）。
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：规模≈57 行；引用次数≈185（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/env_local.py:570；类型=function；引用≈185；规模≈57行
     artifacts_dir = (artifacts_dir or _default_artifacts_dir(env.repo, prefix="rollout")).resolve()
     p = _stage_only_pipeline(env.pipeline, deploy=False, rollout=True, evaluation=False, benchmark=False, env_overrides=env_overrides)
     bootstrap_path = (env.repo / ".aider_fsm" / "bootstrap.yml").resolve()
@@ -626,6 +678,10 @@ def evaluate(
     - 内容：构造 stage-only pipeline（evaluation=true）；可选 bootstrap；调用 `run_pipeline_verification` 并从结果中提取 metrics_path/metrics。
     - 可简略：可能（与 rollout/rollout_and_evaluate 结构相似，可抽公共逻辑）。
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：规模≈64 行；引用次数≈31（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/env_local.py:629；类型=function；引用≈31；规模≈64行
     artifacts_dir = (artifacts_dir or _default_artifacts_dir(env.repo, prefix="evaluation")).resolve()
     p = _stage_only_pipeline(env.pipeline, deploy=False, rollout=False, evaluation=True, benchmark=False, env_overrides=env_overrides)
     bootstrap_path = (env.repo / ".aider_fsm" / "bootstrap.yml").resolve()
@@ -692,6 +748,10 @@ def rollout_and_evaluate(
     - 内容：构造 stage-only pipeline（rollout=true,evaluation=true）；可选 bootstrap；然后一次 `run_pipeline_verification` 同时跑两阶段并校验 evaluation metrics。
     - 可简略：可能（组合 API；保留能让调用方更方便）。
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：规模≈76 行；引用次数≈9（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/env_local.py:695；类型=function；引用≈9；规模≈76行
     # One verification pass runs rollout then evaluation (and validates evaluation metrics).
     artifacts_dir = (artifacts_dir or _default_artifacts_dir(env.repo, prefix="rollout_evaluation")).resolve()
     p = _stage_only_pipeline(env.pipeline, deploy=False, rollout=True, evaluation=True, benchmark=False, env_overrides=env_overrides)
@@ -766,6 +826,10 @@ def with_env_vars(extra_env: dict[str, str]) -> dict[str, str]:
     Example:
       rollout_and_evaluate(env, env_overrides=with_env_vars({"OPENCODE_MODEL": "opencode/gpt-5-nano"}))
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：规模≈11 行；引用次数≈2（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/env_local.py:769；类型=function；引用≈2；规模≈11行
 
     return _merge_env({}, extra_env)
 
@@ -776,6 +840,10 @@ def with_runtime_env_path(runtime_env_path: str | Path) -> dict[str, str]:
     - 内容：返回 `{"AIDER_RUNTIME_ENV_PATH": "<abs path>"}` 形式的 env_overrides，可直接传给 `rollout/evaluate/rollout_and_evaluate`。
     - 可简略：是（只是便捷 wrapper；你也可以手动传 env_overrides）。
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：规模≈8 行；引用次数≈6（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/env_local.py:779；类型=function；引用≈6；规模≈8行
     p = Path(str(runtime_env_path)).expanduser().resolve()
     return _merge_env({}, {"AIDER_RUNTIME_ENV_PATH": str(p)})
 
@@ -797,6 +865,10 @@ def deploy(
       - 要求 deploy_setup 至少能写出 `runtime_env_rel`（否则 runtime_env_path=None）。
     - 可简略：否（这是“先启动服务，再调用 rollout/evaluation”的关键入口）。
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：规模≈86 行；引用次数≈82（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/env_local.py:800；类型=function；引用≈82；规模≈86行
     artifacts_dir = (artifacts_dir or _default_artifacts_dir(env.repo, prefix="deploy")).resolve()
     p = _stage_only_pipeline(env.pipeline, deploy=True, rollout=False, evaluation=False, benchmark=False, env_overrides=env_overrides)
     bootstrap_path = (env.repo / ".aider_fsm" / "bootstrap.yml").resolve()
@@ -883,6 +955,10 @@ def deploy_teardown(
       通过读取 `deploy_teardown_summary.json` 判断是否成功。
     - 可简略：否（实际运行会产生副作用；显式 API 能让调用方可控地清理资源）。
     """
+    # 作用：Best-effort run of deploy teardown commands.
+    # 能否简略：否
+    # 原因：规模≈59 行；引用次数≈22（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/env_local.py:886；类型=function；引用≈22；规模≈59行
     if not list(env.pipeline.deploy_teardown_cmds or []):
         return True
 

@@ -16,6 +16,10 @@ from .security import cmd_allowed
 
 
 def _parse_json_str_list(raw: str | None) -> list[str]:
+    # 作用：内部符号：_parse_json_str_list
+    # 能否简略：部分
+    # 原因：规模≈17 行；引用次数≈5（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
+    # 证据：位置=runner/hints_exec.py:19；类型=function；引用≈5；规模≈17行
     if not raw:
         return []
     try:
@@ -35,6 +39,10 @@ def _parse_json_str_list(raw: str | None) -> list[str]:
 
 
 def _read_hints_file(path: Path) -> list[str]:
+    # 作用：内部符号：_read_hints_file
+    # 能否简略：是
+    # 原因：规模≈12 行；引用次数≈2（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
+    # 证据：位置=runner/hints_exec.py:38；类型=function；引用≈2；规模≈12行
     try:
         text = path.read_text(encoding="utf-8", errors="replace")
     except Exception:
@@ -49,6 +57,10 @@ def _read_hints_file(path: Path) -> list[str]:
 
 
 def _find_latest_scaffold_hints_file(repo: Path) -> Path | None:
+    # 作用：内部符号：_find_latest_scaffold_hints_file
+    # 能否简略：是
+    # 原因：规模≈10 行；引用次数≈2（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
+    # 证据：位置=runner/hints_exec.py:52；类型=function；引用≈2；规模≈10行
     repo = Path(repo).resolve()
     root = (repo / ".aider_fsm" / "artifacts").resolve()
     if not root.exists():
@@ -64,6 +76,10 @@ _FLAG_VALUE_RE = re.compile(r"(?P<flag>--[A-Za-z0-9_.-]+)\s+(?P<val>(?:\"[^\"]*\
 
 
 def _replace_flag_value(cmd: str, *, flag: str, new_value: str) -> str:
+    # 作用：内部符号：_replace_flag_value
+    # 能否简略：部分
+    # 原因：规模≈17 行；引用次数≈4（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
+    # 证据：位置=runner/hints_exec.py:67；类型=function；引用≈4；规模≈17行
     flag = flag.strip()
     if not flag:
         return cmd
@@ -71,6 +87,10 @@ def _replace_flag_value(cmd: str, *, flag: str, new_value: str) -> str:
         return cmd
 
     def repl(m: re.Match[str]) -> str:
+        # 作用：内部符号：_replace_flag_value.repl
+        # 能否简略：是
+        # 原因：规模≈8 行；引用次数≈2（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
+        # 证据：位置=runner/hints_exec.py:74；类型=function；引用≈2；规模≈8行
         if m.group("flag") != flag:
             return m.group(0)
         v = new_value
@@ -138,6 +158,10 @@ _SHELL_BUILTINS = {
 
 
 def _canonical_base_url(url: str | None) -> str:
+    # 作用：内部符号：_canonical_base_url
+    # 能否简略：是
+    # 原因：规模≈8 行；引用次数≈3（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
+    # 证据：位置=runner/hints_exec.py:141；类型=function；引用≈3；规模≈8行
     s = str(url or "").strip()
     if not s:
         return ""
@@ -148,6 +172,10 @@ def _canonical_base_url(url: str | None) -> str:
 
 
 def _first_command_line(cmd: str) -> str:
+    # 作用：内部符号：_first_command_line
+    # 能否简略：否
+    # 原因：规模≈6 行；引用次数≈6（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/hints_exec.py:151；类型=function；引用≈6；规模≈6行
     for raw in str(cmd or "").splitlines():
         line = raw.strip()
         if line:
@@ -156,6 +184,10 @@ def _first_command_line(cmd: str) -> str:
 
 
 def _extract_cli_flag_value(cmd: str, flag: str) -> str:
+    # 作用：内部符号：_extract_cli_flag_value
+    # 能否简略：部分
+    # 原因：规模≈17 行；引用次数≈4（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
+    # 证据：位置=runner/hints_exec.py:159；类型=function；引用≈4；规模≈17行
     line = _first_command_line(cmd)
     if not line:
         return ""
@@ -175,6 +207,10 @@ def _extract_cli_flag_value(cmd: str, flag: str) -> str:
 
 
 def _extract_cli_flag_value_any(cmd: str, flags: list[str]) -> str:
+    # 作用：内部符号：_extract_cli_flag_value_any
+    # 能否简略：部分
+    # 原因：规模≈6 行；引用次数≈4（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
+    # 证据：位置=runner/hints_exec.py:178；类型=function；引用≈4；规模≈6行
     for flag in list(flags or []):
         v = _extract_cli_flag_value(cmd, str(flag))
         if v:
@@ -183,6 +219,10 @@ def _extract_cli_flag_value_any(cmd: str, flags: list[str]) -> str:
 
 
 def _hint_backend(cmd: str) -> str:
+    # 作用：内部符号：_hint_backend
+    # 能否简略：是
+    # 原因：规模≈9 行；引用次数≈3（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
+    # 证据：位置=runner/hints_exec.py:186；类型=function；引用≈3；规模≈9行
     backend = _extract_cli_flag_value(cmd, "--backend").strip().lower()
     if backend:
         return backend
@@ -194,10 +234,18 @@ def _hint_backend(cmd: str) -> str:
 
 
 def _is_remote_openai_hint(cmd: str) -> bool:
+    # 作用：内部符号：_is_remote_openai_hint
+    # 能否简略：是
+    # 原因：规模≈2 行；引用次数≈3（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
+    # 证据：位置=runner/hints_exec.py:197；类型=function；引用≈3；规模≈2行
     return _hint_backend(cmd) == "openai"
 
 
 def _contains_openai_auth_error(text: str) -> bool:
+    # 作用：内部符号：_contains_openai_auth_error
+    # 能否简略：是
+    # 原因：规模≈11 行；引用次数≈2（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
+    # 证据：位置=runner/hints_exec.py:201；类型=function；引用≈2；规模≈11行
     low = str(text or "").lower()
     needles = (
         "invalid_api_key",
@@ -216,6 +264,10 @@ _SCORE_TOKEN_RE = re.compile(
 
 
 def _normalize_score(value: float, *, had_percent: bool) -> float | None:
+    # 作用：内部符号：_normalize_score
+    # 能否简略：是
+    # 原因：规模≈10 行；引用次数≈3（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
+    # 证据：位置=runner/hints_exec.py:219；类型=function；引用≈3；规模≈10行
     v = float(value)
     if had_percent:
         v = v / 100.0
@@ -229,6 +281,10 @@ def _normalize_score(value: float, *, had_percent: bool) -> float | None:
 
 def _extract_score_from_text(text: str) -> tuple[float | None, str]:
     """Best-effort score extraction from stdout/stderr (generic, benchmark-agnostic)."""
+    # 作用：Best-effort score extraction from stdout/stderr (generic, benchmark-agnostic).
+    # 能否简略：部分
+    # 原因：规模≈22 行；引用次数≈2（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
+    # 证据：位置=runner/hints_exec.py:232；类型=function；引用≈2；规模≈22行
     t = str(text or "")
     # Strip ANSI sequences so regexes match more reliably.
     t = re.sub(r"\x1b\[[0-9;]*m", "", t)
@@ -253,8 +309,16 @@ def _extract_score_from_text(text: str) -> tuple[float | None, str]:
 
 def _extract_score_from_json_obj(obj: object) -> tuple[float | None, str]:
     """Best-effort score extraction from JSON-like objects."""
+    # 作用：Best-effort score extraction from JSON-like objects.
+    # 能否简略：部分
+    # 原因：规模≈25 行；引用次数≈2（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
+    # 证据：位置=runner/hints_exec.py:256；类型=function；引用≈2；规模≈25行
 
     def rec(x: object) -> list[tuple[str, float]]:
+        # 作用：内部符号：_extract_score_from_json_obj.rec
+        # 能否简略：否
+        # 原因：规模≈12 行；引用次数≈4（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+        # 证据：位置=runner/hints_exec.py:258；类型=function；引用≈4；规模≈12行
         out: list[tuple[str, float]] = []
         if isinstance(x, dict):
             for k, v in x.items():
@@ -279,6 +343,10 @@ def _extract_score_from_json_obj(obj: object) -> tuple[float | None, str]:
 
 
 def _extract_score_from_json_file(path: Path) -> tuple[float | None, str]:
+    # 作用：内部符号：_extract_score_from_json_file
+    # 能否简略：是
+    # 原因：规模≈6 行；引用次数≈2（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
+    # 证据：位置=runner/hints_exec.py:282；类型=function；引用≈2；规模≈6行
     try:
         data = json.loads(path.read_text(encoding="utf-8", errors="replace"))
     except Exception as e:
@@ -294,6 +362,10 @@ def _candidate_metrics_paths(cmd: str, *, repo: Path, workdir: Path | None = Non
     root-owned output directories. For relative paths, prefer resolving against that
     execution workdir when provided.
     """
+    # 作用：Infer likely output paths for evaluation metrics from a hint command.
+    # 能否简略：部分
+    # 原因：规模≈37 行；引用次数≈2（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
+    # 证据：位置=runner/hints_exec.py:297；类型=function；引用≈2；规模≈37行
     repo = Path(repo).resolve()
     base = Path(workdir).resolve() if workdir is not None else repo
     out: list[Path] = []
@@ -326,6 +398,10 @@ def _candidate_metrics_paths(cmd: str, *, repo: Path, workdir: Path | None = Non
 
 
 def _hint_runtime_compatible(*, cmd: str, env: dict[str, str], strict_compat: bool) -> tuple[bool, str]:
+    # 作用：内部符号：_hint_runtime_compatible
+    # 能否简略：是
+    # 原因：规模≈19 行；引用次数≈2（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
+    # 证据：位置=runner/hints_exec.py:329；类型=function；引用≈2；规模≈19行
     if not strict_compat:
         return True, "ok"
     low = _first_command_line(cmd).lower()
@@ -351,12 +427,20 @@ def normalize_hint_command(cmd: str, *, env: dict[str, str]) -> tuple[str, str |
 
     Returns (sanitized_cmd, skip_reason). If skip_reason is not None, callers should skip it.
     """
+    # 作用：Normalize a doc-derived command hint into something runnable.
+    # 能否简略：部分
+    # 原因：规模≈184 行；引用次数≈6（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
+    # 证据：位置=runner/hints_exec.py:354；类型=function；引用≈6；规模≈184行
     s = str(cmd or "").strip()
     if not s:
         return "", "empty"
 
     # Replace bracketed option groups like [a|b|c] -> a (first option).
     def bracket_repl(m: re.Match[str]) -> str:
+        # 作用：内部符号：normalize_hint_command.bracket_repl
+        # 能否简略：是
+        # 原因：规模≈6 行；引用次数≈2（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
+        # 证据：位置=runner/hints_exec.py:360；类型=function；引用≈2；规模≈6行
         inner = m.group(1)
         if "|" in inner:
             return inner.split("|", 1)[0].strip()
@@ -371,6 +455,10 @@ def normalize_hint_command(cmd: str, *, env: dict[str, str]) -> tuple[str, str |
     py_ver = f"{sys.version_info.major}.{sys.version_info.minor}"
 
     def gha_repl(m: re.Match[str]) -> str:
+        # 作用：内部符号：normalize_hint_command.gha_repl
+        # 能否简略：是
+        # 原因：规模≈5 行；引用次数≈2（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
+        # 证据：位置=runner/hints_exec.py:374；类型=function；引用≈2；规模≈5行
         inner = str(m.group(1) or "").strip().lower()
         if "matrix.python-version" in inner or "matrix.python_version" in inner or "python-version" in inner:
             return py_ver
@@ -418,6 +506,10 @@ def normalize_hint_command(cmd: str, *, env: dict[str, str]) -> tuple[str, str |
             pass
 
     def _rewrite_line(line: str) -> str:
+        # 作用：内部符号：normalize_hint_command._rewrite_line
+        # 能否简略：是
+        # 原因：规模≈15 行；引用次数≈2（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
+        # 证据：位置=runner/hints_exec.py:421；类型=function；引用≈2；规模≈15行
         try:
             parts = shlex.split(line, posix=True)
         except Exception:
@@ -437,6 +529,10 @@ def normalize_hint_command(cmd: str, *, env: dict[str, str]) -> tuple[str, str |
 
     def _looks_like_fire_cli(line: str) -> bool:
         """Heuristic: console-script entrypoints like `pkg.subcmd` are often python-fire CLIs."""
+        # 作用：Heuristic: console-script entrypoints like `pkg.subcmd` are often python-fire CLIs.
+        # 能否简略：部分
+        # 原因：规模≈26 行；引用次数≈2（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
+        # 证据：位置=runner/hints_exec.py:440；类型=function；引用≈2；规模≈26行
         try:
             parts = shlex.split(line, posix=True)
         except Exception:
@@ -463,6 +559,10 @@ def normalize_hint_command(cmd: str, *, env: dict[str, str]) -> tuple[str, str |
         return False
 
     def _maybe_normalize_fire_flag_aliases(line: str) -> str:
+        # 作用：内部符号：normalize_hint_command._maybe_normalize_fire_flag_aliases
+        # 能否简略：是
+        # 原因：规模≈18 行；引用次数≈2（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
+        # 证据：位置=runner/hints_exec.py:466；类型=function；引用≈2；规模≈18行
         if not _looks_like_fire_cli(line):
             return line
         aliases = {
@@ -491,6 +591,10 @@ def normalize_hint_command(cmd: str, *, env: dict[str, str]) -> tuple[str, str |
         # NOTE: we intentionally do NOT inject `--id_range` here. Some evaluators use
         # `--id_range` only for code generation while still expecting a full dataset
         # during evaluation, which can cause hard failures (e.g., "Missing problems in samples").
+        # 作用：内部符号：normalize_hint_command._maybe_bound_openai_codegen_eval
+        # 能否简略：部分
+        # 原因：规模≈30 行；引用次数≈2（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
+        # 证据：位置=runner/hints_exec.py:494；类型=function；引用≈2；规模≈30行
         low = line.lower()
         if "--samples" in low or " -s " in f" {low} ":
             return line
@@ -534,6 +638,10 @@ def normalize_hint_command(cmd: str, *, env: dict[str, str]) -> tuple[str, str |
 
 @dataclass(frozen=True)
 class HintAttempt:
+    # 作用：内部符号：HintAttempt
+    # 能否简略：否
+    # 原因：规模≈9 行；引用次数≈9（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/hints_exec.py:537；类型=class；引用≈9；规模≈9行
     raw: str
     sanitized: str
     rc: int
@@ -546,6 +654,10 @@ class HintAttempt:
 
 @dataclass(frozen=True)
 class HintProbe:
+    # 作用：内部符号：HintProbe
+    # 能否简略：否
+    # 原因：规模≈6 行；引用次数≈7（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/hints_exec.py:549；类型=class；引用≈7；规模≈6行
     raw: str
     sanitized: str
     ok: bool | None
@@ -554,6 +666,10 @@ class HintProbe:
 
 
 def _tail(text: str, n: int) -> str:
+    # 作用：内部符号：_tail
+    # 能否简略：否
+    # 原因：规模≈5 行；引用次数≈11（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/hints_exec.py:557；类型=function；引用≈11；规模≈5行
     t = str(text or "")
     if len(t) <= n:
         return t
@@ -561,6 +677,10 @@ def _tail(text: str, n: int) -> str:
 
 
 def _is_truthy(value: str | None) -> bool:
+    # 作用：内部符号：_is_truthy
+    # 能否简略：否
+    # 原因：规模≈3 行；引用次数≈10（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/hints_exec.py:564；类型=function；引用≈10；规模≈3行
     v = str(value or "").strip().lower()
     return v in ("1", "true", "yes", "y", "on")
 
@@ -571,6 +691,10 @@ def _docker_available(*, env: dict[str, str]) -> tuple[bool, str]:
     This is intentionally generic and only used to avoid spending hint attempts on
     guaranteed-failing docker commands (e.g. Docker Desktop / Colima not running).
     """
+    # 作用：Best-effort check for a usable local Docker daemon.
+    # 能否简略：部分
+    # 原因：规模≈25 行；引用次数≈2（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
+    # 证据：位置=runner/hints_exec.py:574；类型=function；引用≈2；规模≈25行
     if shutil.which("docker") is None:
         return False, "docker_not_found"
     try:
@@ -593,6 +717,10 @@ def _docker_available(*, env: dict[str, str]) -> tuple[bool, str]:
 
 
 def _extract_invoked_command(parts: list[str]) -> tuple[str, list[str]]:
+    # 作用：内部符号：_extract_invoked_command
+    # 能否简略：是
+    # 原因：规模≈18 行；引用次数≈2（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
+    # 证据：位置=runner/hints_exec.py:596；类型=function；引用≈2；规模≈18行
     i = 0
     n = len(parts)
     while i < n:
@@ -620,6 +748,10 @@ def _probe_hint_command(
     timeout_seconds: int,
 ) -> tuple[bool | None, str]:
     """Best-effort non-mutating probe for hint runnability."""
+    # 作用：Best-effort non-mutating probe for hint runnability.
+    # 能否简略：否
+    # 原因：规模≈110 行；引用次数≈3（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/hints_exec.py:623；类型=function；引用≈3；规模≈110行
     text = str(cmd or "").strip()
     if not text:
         return False, "empty"
@@ -725,6 +857,10 @@ def _probe_hint_command(
 
 
 def _matched_anchors(text: str, *, anchors: list[str]) -> list[str]:
+    # 作用：内部符号：_matched_anchors
+    # 能否简略：部分
+    # 原因：规模≈16 行；引用次数≈4（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
+    # 证据：位置=runner/hints_exec.py:728；类型=function；引用≈4；规模≈16行
     if not anchors:
         return []
     low = str(text or "").lower()
@@ -749,6 +885,10 @@ def run_hints(
     timeout_seconds: int = 600,
     env: dict[str, str] | None = None,
 ) -> dict[str, Any]:
+    # 作用：内部符号：run_hints
+    # 能否简略：否
+    # 原因：规模≈617 行；引用次数≈16（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/hints_exec.py:752；类型=function；引用≈16；规模≈617行
     repo = Path(repo).resolve()
     env2 = dict(env or os.environ)
 
@@ -776,6 +916,10 @@ def run_hints(
             artifacts_dir = None
 
     def _priority(raw: str) -> int:
+        # 作用：内部符号：run_hints._priority
+        # 能否简略：部分
+        # 原因：规模≈34 行；引用次数≈3（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
+        # 证据：位置=runner/hints_exec.py:779；类型=function；引用≈3；规模≈34行
         s = str(raw or "").lower()
         p = 0
         # Prefer commands that actually *run* evaluations/tests over setup/build steps.
@@ -825,6 +969,10 @@ def run_hints(
     def _looks_like_openai_codegen_eval(cmd: str) -> bool:
         # Heuristic: `.evaluate/.codegen` CLIs with `--backend openai` + `--model` + `--dataset`
         # and without `--samples` are likely to generate outputs under a default relative root.
+        # 作用：内部符号：run_hints._looks_like_openai_codegen_eval
+        # 能否简略：是
+        # 原因：规模≈15 行；引用次数≈3（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
+        # 证据：位置=runner/hints_exec.py:828；类型=function；引用≈3；规模≈15行
         low = _first_command_line(cmd).lower()
         if not low:
             return False
@@ -839,6 +987,10 @@ def run_hints(
         return True
 
     def _hint_workdir(cmd: str, *, attempt_no: int) -> Path:
+        # 作用：内部符号：run_hints._hint_workdir
+        # 能否简略：是
+        # 原因：规模≈15 行；引用次数≈2（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
+        # 证据：位置=runner/hints_exec.py:842；类型=function；引用≈2；规模≈15行
         nonlocal hint_work_root
         # Default: run hints from repo root.
         if artifacts_dir is None:
@@ -862,6 +1014,10 @@ def run_hints(
         override file with the first N tasks to bound runtime without depending on
         evaluator-specific CLI flags.
         """
+        # 作用：Best-effort: create a small dataset override file for smoke/full-lite runs.
+        # 能否简略：部分
+        # 原因：规模≈123 行；引用次数≈2（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
+        # 证据：位置=runner/hints_exec.py:865；类型=function；引用≈2；规模≈123行
         try:
             lim = int(str(env.get("AIDER_EVAL_LIMIT") or "").strip() or 0)
         except Exception:
@@ -980,6 +1136,10 @@ if len(seen) <= 0:
 
     def _parse_pytest_counts(text: str) -> tuple[int, int, int] | None:
         """Parse (passed, failed, errors) from pytest output (best-effort)."""
+        # 作用：Parse (passed, failed, errors) from pytest output (best-effort).
+        # 能否简略：部分
+        # 原因：规模≈24 行；引用次数≈3（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
+        # 证据：位置=runner/hints_exec.py:983；类型=function；引用≈3；规模≈24行
         t = str(text or "")
         # Strip ANSI color codes so regexes can match reliably.
         t = re.sub(r"\x1b\[[0-9;]*m", "", t)
@@ -1117,6 +1277,10 @@ if len(seen) <= 0:
         )
 
     def _probe_rank(v: bool | None) -> int:
+        # 作用：内部符号：run_hints._probe_rank
+        # 能否简略：是
+        # 原因：规模≈6 行；引用次数≈2（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
+        # 证据：位置=runner/hints_exec.py:1120；类型=function；引用≈2；规模≈6行
         if v is True:
             return 2
         if v is None:
@@ -1362,6 +1526,10 @@ if len(seen) <= 0:
 
 
 def main() -> int:
+    # 作用：内部符号：main
+    # 能否简略：否
+    # 原因：规模≈12 行；引用次数≈25（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/hints_exec.py:1365；类型=function；引用≈25；规模≈12行
     import argparse
 
     ap = argparse.ArgumentParser(description="Run doc-derived hint commands with best-effort sanitization.")

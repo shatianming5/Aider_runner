@@ -14,6 +14,10 @@ from .pipeline_spec import PipelineSpec
 @dataclass(frozen=True)
 class ScaffoldValidationReport:
     """Structured scaffold validation output used by scaffold + repair loops."""
+    # 作用：Structured scaffold validation output used by scaffold + repair loops.
+    # 能否简略：否
+    # 原因：规模≈33 行；引用次数≈3（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/scaffold_validation.py:17；类型=class；引用≈3；规模≈33行
 
     missing_fields: list[str] = None  # type: ignore[assignment]
     missing_files: list[str] = None  # type: ignore[assignment]
@@ -22,6 +26,10 @@ class ScaffoldValidationReport:
     warnings: list[str] = None  # type: ignore[assignment]
 
     def __post_init__(self) -> None:
+        # 作用：内部符号：ScaffoldValidationReport.__post_init__
+        # 能否简略：是
+        # 原因：规模≈11 行；引用次数≈0（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
+        # 证据：位置=runner/scaffold_validation.py:25；类型=method；引用≈0；规模≈11行
         if self.missing_fields is None:
             object.__setattr__(self, "missing_fields", [])
         if self.missing_files is None:
@@ -35,6 +43,10 @@ class ScaffoldValidationReport:
 
     @property
     def errors(self) -> list[str]:
+        # 作用：内部符号：ScaffoldValidationReport.errors
+        # 能否简略：是
+        # 原因：规模≈7 行；引用次数≈0（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
+        # 证据：位置=runner/scaffold_validation.py:38；类型=method；引用≈0；规模≈7行
         return [
             *list(self.missing_fields or []),
             *[f"missing_file: {x}" for x in (self.missing_files or [])],
@@ -44,6 +56,10 @@ class ScaffoldValidationReport:
 
     @property
     def ok(self) -> bool:
+        # 作用：内部符号：ScaffoldValidationReport.ok
+        # 能否简略：是
+        # 原因：规模≈2 行；引用次数≈0（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
+        # 证据：位置=runner/scaffold_validation.py:47；类型=method；引用≈0；规模≈2行
         return len(self.errors) == 0
 
 
@@ -66,6 +82,10 @@ def validate_scaffolded_pipeline(
       - 若 require_metrics=True，则要求 evaluation 产出 metrics JSON（含 score 与 ok）。
     - 可简略：否（这是“只给 URL 也能跑”的合同底线；若缺失会让后续流程不可用或不可审计）。
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：规模≈37 行；引用次数≈2（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/scaffold_validation.py:69；类型=function；引用≈2；规模≈37行
     missing: list[str] = []
 
     if pipeline.security_max_cmd_seconds is None or int(pipeline.security_max_cmd_seconds) <= 0:
@@ -98,6 +118,10 @@ def validate_scaffolded_files(repo_root: Path) -> list[str]:
     - 内容：要求 `.aider_fsm/stages/*.sh` 里被 pipeline 默认引用的脚本都存在（可为 no-op，但必须可执行）。
     - 可简略：可能（属于更严格的契约校验；但能显著减少“pipeline 可解析但缺脚本”的空跑情况）。
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：规模≈21 行；引用次数≈2（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/scaffold_validation.py:101；类型=function；引用≈2；规模≈21行
     repo_root = Path(repo_root).resolve()
     required = [
         repo_root / ".aider_fsm" / "stages" / "tests.sh",
@@ -117,6 +141,10 @@ def validate_scaffolded_files(repo_root: Path) -> list[str]:
 
 def validate_scaffolded_stage_scripts(repo_root: Path) -> list[str]:
     """Best-effort stage script lint: currently shell syntax checks for required scripts."""
+    # 作用：Best-effort stage script lint: currently shell syntax checks for required scripts.
+    # 能否简略：否
+    # 原因：规模≈77 行；引用次数≈2（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/scaffold_validation.py:120；类型=function；引用≈2；规模≈77行
     repo_root = Path(repo_root).resolve()
     required = [
         repo_root / ".aider_fsm" / "stages" / "tests.sh",
@@ -196,6 +224,10 @@ def validate_scaffolded_stage_scripts(repo_root: Path) -> list[str]:
 
 def validate_scaffolded_bootstrap(repo_root: Path) -> tuple[list[str], list[str]]:
     """Validate optional `.aider_fsm/bootstrap.yml` parseability + basic contract hints."""
+    # 作用：Validate optional `.aider_fsm/bootstrap.yml` parseability + basic contract hints.
+    # 能否简略：否
+    # 原因：规模≈18 行；引用次数≈2（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/scaffold_validation.py:199；类型=function；引用≈2；规模≈18行
     repo_root = Path(repo_root).resolve()
     path = (repo_root / ".aider_fsm" / "bootstrap.yml").resolve()
     if not path.exists():
@@ -221,6 +253,10 @@ def validate_scaffold_contract(
     require_metrics: bool,
 ) -> ScaffoldValidationReport:
     """Run full scaffold contract validation used by scaffold + repair entrypoints."""
+    # 作用：Run full scaffold contract validation used by scaffold + repair entrypoints.
+    # 能否简略：否
+    # 原因：规模≈18 行；引用次数≈11（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/scaffold_validation.py:224；类型=function；引用≈11；规模≈18行
     missing_fields = validate_scaffolded_pipeline(pipeline, require_metrics=require_metrics)
     missing_files = validate_scaffolded_files(repo_root)
     stage_script_errors = validate_scaffolded_stage_scripts(repo_root)

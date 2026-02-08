@@ -6,6 +6,10 @@ from pathlib import Path
 
 def test_no_repo_level_env_module() -> None:
     """The repo should not ship a top-level `env.py` compatibility module."""
+    # 作用：The repo should not ship a top-level `env.py` compatibility module.
+    # 能否简略：否
+    # 原因：测试代码（优先可读性）；规模≈10 行；引用次数≈1（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=tests/test_public_api_surface.py:9；类型=function；引用≈1；规模≈10行
     root = Path(__file__).resolve().parents[1]
     assert not (root / "env.py").exists()
 
@@ -17,6 +21,10 @@ def test_no_repo_level_env_module() -> None:
 
 
 def test_runner_env_public_surface_is_minimal() -> None:
+    # 作用：pytest 测试用例：验证行为契约
+    # 能否简略：否
+    # 原因：测试代码（优先可读性）；规模≈22 行；引用次数≈1（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=tests/test_public_api_surface.py:20；类型=function；引用≈1；规模≈22行
     from runner import env as runner_env
 
     assert hasattr(runner_env, "setup")

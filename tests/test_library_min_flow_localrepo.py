@@ -9,11 +9,19 @@ from runner import env as runner_env
 
 
 def _write_json(path: Path, obj: dict) -> None:
+    # 作用：内部符号：_write_json
+    # 能否简略：否
+    # 原因：测试代码（优先可读性）；规模≈3 行；引用次数≈18（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=tests/test_library_min_flow_localrepo.py:12；类型=function；引用≈18；规模≈3行
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(obj, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
 def test_library_setup_rollout_evaluate_min_repo(tmp_path: Path) -> None:
+    # 作用：pytest 测试用例：验证行为契约
+    # 能否简略：部分
+    # 原因：测试代码（优先可读性）；规模≈143 行；引用次数≈1（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
+    # 证据：位置=tests/test_library_min_flow_localrepo.py:17；类型=function；引用≈1；规模≈143行
     repo = tmp_path / "repo"
     repo.mkdir()
 

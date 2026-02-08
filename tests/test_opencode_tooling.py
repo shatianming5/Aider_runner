@@ -11,6 +11,10 @@ def test_parse_tool_calls_detects_file_write_json_fence():
     - 内容：提供一个包含 ```json ...``` 的文本，断言解析出 1 个 kind=file 且 payload 字段正确。
     - 可简略：可能（可并入更大的表驱动测试；但单测粒度清晰）。
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：测试代码（优先可读性）；规模≈14 行；引用次数≈1（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=tests/test_opencode_tooling.py:14；类型=function；引用≈1；规模≈14行
     text = "hi\n```json\n{\"filePath\":\"PLAN.md\",\"content\":\"# PLAN\\n\"}\n```\n"
     calls = parse_tool_calls(text)
     assert len(calls) == 1
@@ -27,6 +31,10 @@ def test_parse_tool_calls_detects_bash_call():
     - 内容：提供一个包含 bash tool 的 JSON 参数，断言解析出 kind=bash 且 command 正确。
     - 可简略：可能（可参数化更多命令；当前覆盖主路径）。
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：测试代码（优先可读性）；规模≈13 行；引用次数≈1（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=tests/test_opencode_tooling.py:30；类型=function；引用≈1；规模≈13行
     text = "```bash\nbash\n{\"command\":\"git status --porcelain\"}\n```\n"
     calls = parse_tool_calls(text)
     assert len(calls) == 1
@@ -42,6 +50,10 @@ def test_parse_tool_calls_detects_self_closing_write_tag():
     - 内容：输入 `<write filePath=... content=... />`，断言解析出 kind=file 且内容正确解码。
     - 可简略：可能（主要覆盖标签语法的兼容性）。
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：测试代码（优先可读性）；规模≈14 行；引用次数≈1（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=tests/test_opencode_tooling.py:45；类型=function；引用≈1；规模≈14行
     text = '<write filePath=\"hello.txt\" content=\"hello\\n\" />'
     calls = parse_tool_calls(text)
     assert len(calls) == 1
@@ -53,6 +65,10 @@ def test_parse_tool_calls_detects_self_closing_write_tag():
 
 
 def test_parse_tool_calls_detects_paired_write_tag_with_body_content():
+    # 作用：pytest 测试用例：验证行为契约
+    # 能否简略：否
+    # 原因：测试代码（优先可读性）；规模≈9 行；引用次数≈1（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=tests/test_opencode_tooling.py:56；类型=function；引用≈1；规模≈9行
     text = '<write filePath="pipeline.yml">version: 1\nsecurity:\n  mode: safe\n</write>'
     calls = parse_tool_calls(text)
     assert len(calls) == 1
@@ -65,6 +81,10 @@ def test_parse_tool_calls_detects_paired_write_tag_with_body_content():
 
 def test_parse_tool_calls_unescapes_xml_entities_in_write_body_content():
     # Models sometimes emit XML-escaped file bodies, e.g. `<<` becomes `&lt;&lt;`.
+    # 作用：pytest 测试用例：验证行为契约
+    # 能否简略：否
+    # 原因：测试代码（优先可读性）；规模≈10 行；引用次数≈1（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=tests/test_opencode_tooling.py:68；类型=function；引用≈1；规模≈10行
     text = '<write filePath="deploy_setup.sh">cat &lt;&lt; EOF\nhello\nEOF\n</write>'
     calls = parse_tool_calls(text)
     assert len(calls) == 1
@@ -77,6 +97,10 @@ def test_parse_tool_calls_unescapes_xml_entities_in_write_body_content():
 
 def test_parse_tool_calls_unescapes_double_escaped_xml_entities():
     # Some model outputs are double-escaped (e.g. `&amp;amp;`), so we unescape a few times.
+    # 作用：pytest 测试用例：验证行为契约
+    # 能否简略：否
+    # 原因：测试代码（优先可读性）；规模≈10 行；引用次数≈1（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=tests/test_opencode_tooling.py:80；类型=function；引用≈1；规模≈10行
     text = '<write filePath="x.sh">echo hi 2&gt;&amp;amp;1\n</write>'
     calls = parse_tool_calls(text)
     assert len(calls) == 1
@@ -88,6 +112,10 @@ def test_parse_tool_calls_unescapes_double_escaped_xml_entities():
 
 
 def test_parse_tool_calls_detects_self_closing_edit_tag():
+    # 作用：pytest 测试用例：验证行为契约
+    # 能否简略：否
+    # 原因：测试代码（优先可读性）；规模≈10 行；引用次数≈1（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=tests/test_opencode_tooling.py:91；类型=function；引用≈1；规模≈10行
     text = '<edit filePath="hello.txt" oldString="hello" newString="world" />'
     calls = parse_tool_calls(text)
     assert len(calls) == 1
@@ -100,6 +128,10 @@ def test_parse_tool_calls_detects_self_closing_edit_tag():
 
 
 def test_execute_tool_calls_applies_edit_old_new(tmp_path: Path):
+    # 作用：pytest 测试用例：验证行为契约
+    # 能否简略：否
+    # 原因：测试代码（优先可读性）；规模≈17 行；引用次数≈1（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=tests/test_opencode_tooling.py:103；类型=function；引用≈1；规模≈17行
     repo = tmp_path.resolve()
     (repo / "hello.txt").write_text("hello\n", encoding="utf-8")
 
@@ -119,6 +151,10 @@ def test_execute_tool_calls_applies_edit_old_new(tmp_path: Path):
 
 
 def test_execute_tool_calls_edit_without_old_string_overwrites(tmp_path: Path):
+    # 作用：pytest 测试用例：验证行为契约
+    # 能否简略：否
+    # 原因：测试代码（优先可读性）；规模≈17 行；引用次数≈1（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=tests/test_opencode_tooling.py:122；类型=function；引用≈1；规模≈17行
     repo = tmp_path.resolve()
     (repo / "hello.txt").write_text("old", encoding="utf-8")
 
@@ -138,6 +174,10 @@ def test_execute_tool_calls_edit_without_old_string_overwrites(tmp_path: Path):
 
 
 def test_execute_tool_calls_edit_requires_unique_old_string(tmp_path: Path):
+    # 作用：pytest 测试用例：验证行为契约
+    # 能否简略：否
+    # 原因：测试代码（优先可读性）；规模≈17 行；引用次数≈1（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=tests/test_opencode_tooling.py:141；类型=function；引用≈1；规模≈17行
     repo = tmp_path.resolve()
     (repo / "hello.txt").write_text("aa", encoding="utf-8")
 
@@ -157,6 +197,10 @@ def test_execute_tool_calls_edit_requires_unique_old_string(tmp_path: Path):
 
 
 def test_execute_tool_calls_read_directory_returns_error_instead_of_throwing(tmp_path: Path):
+    # 作用：pytest 测试用例：验证行为契约
+    # 能否简略：否
+    # 原因：测试代码（优先可读性）；规模≈18 行；引用次数≈1（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=tests/test_opencode_tooling.py:160；类型=function；引用≈1；规模≈18行
     repo = tmp_path.resolve()
     (repo / ".aider_fsm").mkdir(parents=True, exist_ok=True)
 
@@ -177,6 +221,10 @@ def test_execute_tool_calls_read_directory_returns_error_instead_of_throwing(tmp
 
 
 def test_parse_tool_calls_detects_paired_bash_tag_with_attrs():
+    # 作用：pytest 测试用例：验证行为契约
+    # 能否简略：否
+    # 原因：测试代码（优先可读性）；规模≈8 行；引用次数≈1（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=tests/test_opencode_tooling.py:180；类型=function；引用≈1；规模≈8行
     text = '<bash command="mkdir -p .aider_fsm/stages" description="create stages"></bash>'
     calls = parse_tool_calls(text)
     assert len(calls) == 1
@@ -187,6 +235,10 @@ def test_parse_tool_calls_detects_paired_bash_tag_with_attrs():
 
 
 def test_parse_tool_calls_parses_self_closing_bash_with_slash_in_command():
+    # 作用：pytest 测试用例：验证行为契约
+    # 能否简略：否
+    # 原因：测试代码（优先可读性）；规模≈8 行；引用次数≈1（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=tests/test_opencode_tooling.py:190；类型=function；引用≈1；规模≈8行
     text = '<bash command="ls -la .aider_fsm/" description="list" />'
     calls = parse_tool_calls(text)
     assert len(calls) == 1
@@ -197,6 +249,10 @@ def test_parse_tool_calls_parses_self_closing_bash_with_slash_in_command():
 
 
 def test_parse_tool_calls_normalizes_malformed_bash_tag_missing_leading_angle_bracket():
+    # 作用：pytest 测试用例：验证行为契约
+    # 能否简略：否
+    # 原因：测试代码（优先可读性）；规模≈8 行；引用次数≈1（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=tests/test_opencode_tooling.py:200；类型=function；引用≈1；规模≈8行
     text = 'bash<command="ls -la .aider_fsm/" description="list" />'
     calls = parse_tool_calls(text)
     assert len(calls) == 1
@@ -207,6 +263,10 @@ def test_parse_tool_calls_normalizes_malformed_bash_tag_missing_leading_angle_br
 
 
 def test_parse_tool_calls_unescapes_quoted_attr_values():
+    # 作用：pytest 测试用例：验证行为契约
+    # 能否简略：否
+    # 原因：测试代码（优先可读性）；规模≈11 行；引用次数≈1（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=tests/test_opencode_tooling.py:210；类型=function；引用≈1；规模≈11行
     text = (
         '<bash command="find . -name \\"*.json\\" -o -name \\"Dockerfile*\\" | head -20" '
         'description="find files" />'
@@ -220,6 +280,10 @@ def test_parse_tool_calls_unescapes_quoted_attr_values():
 
 
 def test_parse_tool_calls_tolerates_malformed_single_quoted_write_content():
+    # 作用：pytest 测试用例：验证行为契约
+    # 能否简略：否
+    # 原因：测试代码（优先可读性）；规模≈17 行；引用次数≈1（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=tests/test_opencode_tooling.py:223；类型=function；引用≈1；规模≈17行
     text = """
 <write
 filePath=".aider_fsm/stages/evaluation.sh"
@@ -239,6 +303,10 @@ python -c "print(f'X')"
 
 
 def test_parse_tool_calls_handles_large_malformed_write_without_backtracking_hang():
+    # 作用：pytest 测试用例：验证行为契约
+    # 能否简略：否
+    # 原因：测试代码（优先可读性）；规模≈13 行；引用次数≈1（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=tests/test_opencode_tooling.py:242；类型=function；引用≈1；规模≈13行
     blob = ("echo line with quote f'X' and slash /tmp/path\n" * 2500).strip()
     text = (
         "<write filePath=\".aider_fsm/stages/evaluation.sh\" "
@@ -259,6 +327,10 @@ def test_parse_tool_calls_detects_raw_json_inside_tool_call_block():
     - 内容：提供 raw JSON filePath tool_call，断言可解析为 kind=file。
     - 可简略：否（该格式在部分模型/代理输出中较常见，缺失会导致 scaffold 无法落盘）。
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：测试代码（优先可读性）；规模≈13 行；引用次数≈1（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=tests/test_opencode_tooling.py:262；类型=function；引用≈1；规模≈13行
     text = "<tool_call>\n{\"filePath\": \"README.md\"}\n</tool_call>\n"
     calls = parse_tool_calls(text)
     assert len(calls) == 1
@@ -274,6 +346,10 @@ def test_parse_tool_calls_detects_wrapped_name_arguments_tool_call_with_missing_
     - 内容：提供 `<tool_call>{"name":"write","arguments":{...}}</tool_call>`，断言解析为 file 工具调用。
     - 可简略：否（真实 strict scaffold 日志中出现；缺失会导致 stage scripts 无法落盘，进而触发 incomplete_contract）。
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：测试代码（优先可读性）；规模≈14 行；引用次数≈1（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=tests/test_opencode_tooling.py:277；类型=function；引用≈1；规模≈14行
     text = '<tool_call>{"name":"write","arguments":{"content":"hello\\n",filePath":"hello.txt"}}</tool_call>'
     calls = parse_tool_calls(text)
     assert len(calls) == 1
@@ -290,6 +366,10 @@ def test_parse_tool_calls_repairs_invalid_escape_in_wrapped_name_arguments_tool_
     - 内容：提供包含 `\\${...}` 的 `<tool_call>{"name":"write","arguments":{...}}</tool_call>`，断言仍可解析为 file 工具调用并保留字面反斜杠。
     - 可简略：否（真实 strict scaffold 日志中出现，导致 json.loads 失败进而漏执行 tool-call）。
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：测试代码（优先可读性）；规模≈14 行；引用次数≈1（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=tests/test_opencode_tooling.py:293；类型=function；引用≈1；规模≈14行
     text = '<tool_call>{"name":"write","arguments":{"filePath":"hello.txt","content":"echo \\${VAR}\\n"}}</tool_call>'
     calls = parse_tool_calls(text)
     assert len(calls) == 1
@@ -306,6 +386,10 @@ def test_parse_tool_calls_detects_inline_read_and_write_json():
     - 内容：输入一段包含 read+write 的原始文本，断言都能解析为 kind=file 且 payload 字段正确。
     - 可简略：否（该格式在真实 strict scaffold 日志中出现，缺失会导致工具调用被漏执行）。
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：测试代码（优先可读性）；规模≈24 行；引用次数≈1（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=tests/test_opencode_tooling.py:309；类型=function；引用≈1；规模≈24行
     text = (
         'I will inspect docs first. read{"filePath":"README.md"}\n'
         "Then create the contract file:</think>write\n"
@@ -332,6 +416,10 @@ def test_tool_policy_plan_update_only_allows_plan_md(tmp_path: Path):
     - 内容：构造 policy 并分别尝试写 PLAN.md 与其它文件，断言允许/拒绝与 reason 符合预期。
     - 可简略：否（属于安全边界测试；建议保留以防回归）。
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：测试代码（优先可读性）；规模≈25 行；引用次数≈1（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=tests/test_opencode_tooling.py:335；类型=function；引用≈1；规模≈25行
     repo = tmp_path.resolve()
     plan = repo / "PLAN.md"
     pipeline = repo / "pipeline.yml"
@@ -359,6 +447,10 @@ def test_tool_policy_execute_step_denies_plan_and_pipeline(tmp_path: Path):
     - 内容：分别对 plan/pipeline/src 文件调用 `allow_file_write`，断言拒绝原因与允许结果正确。
     - 可简略：否（是执行阶段的关键保护，避免 agent 越权改契约/计划）。
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：测试代码（优先可读性）；规模≈27 行；引用次数≈1（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=tests/test_opencode_tooling.py:362；类型=function；引用≈1；规模≈27行
     repo = tmp_path.resolve()
     plan = repo / "PLAN.md"
     pipeline = repo / "pipeline.yml"
@@ -388,6 +480,10 @@ def test_tool_policy_scaffold_contract_allows_only_pipeline_and_aider_fsm(tmp_pa
     - 内容：policy.allow_file_write 对 pipeline/bootstrap.yml 放行，对 src/app.py 拒绝并返回原因。
     - 可简略：否（是 scaffold 合同的关键边界；建议保留）。
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：测试代码（优先可读性）；规模≈28 行；引用次数≈1（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=tests/test_opencode_tooling.py:391；类型=function；引用≈1；规模≈28行
     repo = tmp_path.resolve()
     plan = repo / "PLAN.md"
     pipeline = repo / "pipeline.yml"
@@ -418,6 +514,10 @@ def test_tool_policy_restricted_bash_blocks_shell_metacharacters(tmp_path: Path)
     - 内容：调用 `allow_bash('echo \"hi\" > hello.txt')`，期望返回 not ok 且 reason 属于预期集合。
     - 可简略：否（属于安全防线测试；建议保留以防策略回退）。
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：测试代码（优先可读性）；规模≈19 行；引用次数≈1（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=tests/test_opencode_tooling.py:421；类型=function；引用≈1；规模≈19行
     repo = tmp_path.resolve()
     policy = ToolPolicy(
         repo=repo,

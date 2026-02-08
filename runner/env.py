@@ -34,10 +34,18 @@ __all__ = ["EnvSession", "setup"]
 
 
 def _now_run_id() -> str:
+    # 作用：内部符号：_now_run_id
+    # 能否简略：是
+    # 原因：规模≈2 行；引用次数≈2（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
+    # 证据：位置=runner/env.py:37；类型=function；引用≈2；规模≈2行
     return time.strftime("%Y%m%d_%H%M%S", time.localtime())
 
 
 def _resolve_path(p: str | Path) -> Path:
+    # 作用：内部符号：_resolve_path
+    # 能否简略：部分
+    # 原因：规模≈2 行；引用次数≈4（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
+    # 证据：位置=runner/env.py:41；类型=function；引用≈4；规模≈2行
     return Path(str(p)).expanduser().resolve()
 
 
@@ -47,6 +55,10 @@ def _resolve_llm(llm: str | Path) -> tuple[str, Path | None, str | None]:
     - Local: an existing directory path (Path or str).
     - Remote: any other non-empty string (passed through as-is).
     """
+    # 作用：Resolve an LLM reference to either a local model dir or a remote model id.
+    # 能否简略：部分
+    # 原因：规模≈34 行；引用次数≈2（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
+    # 证据：位置=runner/env.py:50；类型=function；引用≈2；规模≈34行
     if isinstance(llm, Path):
         p = llm.expanduser().resolve()
         if not p.exists():
@@ -78,6 +90,10 @@ def _resolve_llm(llm: str | Path) -> tuple[str, Path | None, str | None]:
 
 
 def _resolve_run_root(repo: Path, *, run_id: str, artifacts_dir: Path | None) -> Path:
+    # 作用：内部符号：_resolve_run_root
+    # 能否简略：部分
+    # 原因：规模≈7 行；引用次数≈4（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
+    # 证据：位置=runner/env.py:81；类型=function；引用≈4；规模≈7行
     if artifacts_dir is not None:
         out = _resolve_path(artifacts_dir)
     else:
@@ -87,6 +103,10 @@ def _resolve_run_root(repo: Path, *, run_id: str, artifacts_dir: Path | None) ->
 
 
 def _read_json_object(path: Path) -> dict[str, Any] | None:
+    # 作用：内部符号：_read_json_object
+    # 能否简略：否
+    # 原因：规模≈8 行；引用次数≈7（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/env.py:90；类型=function；引用≈7；规模≈8行
     try:
         data = json.loads(path.read_text(encoding="utf-8", errors="replace"))
     except Exception:
@@ -97,6 +117,10 @@ def _read_json_object(path: Path) -> dict[str, Any] | None:
 
 
 def _ensure_openai_v1_base(base_url: str) -> str:
+    # 作用：内部符号：_ensure_openai_v1_base
+    # 能否简略：是
+    # 原因：规模≈5 行；引用次数≈3（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
+    # 证据：位置=runner/env.py:100；类型=function；引用≈3；规模≈5行
     b = str(base_url or "").strip().rstrip("/")
     if not b:
         return ""
@@ -110,6 +134,10 @@ def _inject_openai_base_compat(overrides: dict[str, str]) -> None:
     `OPENAI_API_BASE`. We normalize to include both keys when either is present
     in env overrides or inherited process env.
     """
+    # 作用：Keep OpenAI-compatible base URL aliases in sync for downstream tools.
+    # 能否简略：是
+    # 原因：规模≈18 行；引用次数≈2（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
+    # 证据：位置=runner/env.py:113；类型=function；引用≈2；规模≈18行
     base = (
         str(overrides.get("OPENAI_BASE_URL") or "").strip()
         or str(overrides.get("OPENAI_API_BASE") or "").strip()
@@ -125,6 +153,10 @@ def _inject_openai_base_compat(overrides: dict[str, str]) -> None:
 
 def _runtime_openai_config(runtime_env_path: Path) -> tuple[str | None, str | None]:
     """Best-effort: derive (OPENAI_API_BASE, OPENAI_MODEL) from runtime_env.json."""
+    # 作用：Best-effort: derive (OPENAI_API_BASE, OPENAI_MODEL) from runtime_env.json.
+    # 能否简略：部分
+    # 原因：规模≈22 行；引用次数≈2（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
+    # 证据：位置=runner/env.py:128；类型=function；引用≈2；规模≈22行
     p = Path(runtime_env_path).expanduser().resolve()
     obj = _read_json_object(p)
     if obj is None:
@@ -149,6 +181,10 @@ def _runtime_openai_config(runtime_env_path: Path) -> tuple[str | None, str | No
 
 def _verification_errors_summary(verify: Any) -> str:
     """Best-effort: surface pipeline verification errors for contract repair prompts."""
+    # 作用：Best-effort: surface pipeline verification errors for contract repair prompts.
+    # 能否简略：是
+    # 原因：规模≈14 行；引用次数≈3（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
+    # 证据：位置=runner/env.py:152；类型=function；引用≈3；规模≈14行
     if verify is None:
         return ""
     parts: list[str] = []
@@ -165,6 +201,10 @@ def _verification_errors_summary(verify: Any) -> str:
 
 def _find_hf_test_parquet(repo_root: Path) -> Path | None:
     """Best-effort: find an HF dataset test split parquet (generic; no dataset-id hardcoding)."""
+    # 作用：Best-effort: find an HF dataset test split parquet (generic; no dataset-id hardcoding).
+    # 能否简略：是
+    # 原因：规模≈15 行；引用次数≈3（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
+    # 证据：位置=runner/env.py:168；类型=function；引用≈3；规模≈15行
     repo_root = Path(repo_root).resolve()
     p0 = (repo_root / "main" / "test-00000-of-00001.parquet").resolve()
     if p0.exists():
@@ -182,6 +222,10 @@ def _find_hf_test_parquet(repo_root: Path) -> Path | None:
 
 def _hf_parquet_qa_rows(repo_root: Path) -> int | None:
     """If repo_root is an HF snapshot with a QA test parquet, return its row count."""
+    # 作用：If repo_root is an HF snapshot with a QA test parquet, return its row count.
+    # 能否简略：部分
+    # 原因：规模≈30 行；引用次数≈2（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
+    # 证据：位置=runner/env.py:185；类型=function；引用≈2；规模≈30行
     repo_root = Path(repo_root).resolve()
     if not (repo_root / "data" / "hf_manifest.json").exists():
         return None
@@ -214,6 +258,10 @@ def _hf_parquet_qa_rows(repo_root: Path) -> int | None:
 
 def _hf_parquet_qa_question_samples(repo_root: Path, *, max_questions: int = 20) -> list[str] | None:
     """If repo_root is an HF QA snapshot, return up to N sample questions from the test parquet."""
+    # 作用：If repo_root is an HF QA snapshot, return up to N sample questions from the test parquet.
+    # 能否简略：部分
+    # 原因：规模≈39 行；引用次数≈2（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
+    # 证据：位置=runner/env.py:217；类型=function；引用≈2；规模≈39行
     repo_root = Path(repo_root).resolve()
     if not (repo_root / "data" / "hf_manifest.json").exists():
         return None
@@ -274,6 +322,10 @@ def _validate_rollout_samples(
       Also require some prompt diversity to avoid trivial placeholder rollouts.
       Also require prompts to be anchored to dataset questions (to avoid synthetic "fake" tasks).
     """
+    # 作用：Validate that rollout produced a usable samples JSONL reference.
+    # 能否简略：部分
+    # 原因：规模≈157 行；引用次数≈9（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
+    # 证据：位置=runner/env.py:277；类型=function；引用≈9；规模≈157行
     repo = Path(repo).resolve()
     p = (rollout_path or (repo / ".aider_fsm" / "rollout.json")).resolve()
     if not p.exists():
@@ -336,6 +388,10 @@ def _validate_rollout_samples(
     qa_questions = _hf_parquet_qa_question_samples(repo, max_questions=20) if expected_min is not None else None
 
     def _norm_ws(s: str) -> str:
+        # 作用：内部符号：_validate_rollout_samples._norm_ws
+        # 能否简略：是
+        # 原因：规模≈2 行；引用次数≈3（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
+        # 证据：位置=runner/env.py:339；类型=function；引用≈3；规模≈2行
         return " ".join(str(s or "").strip().lower().split())
 
     qa_q_norms: list[str] = []
@@ -420,6 +476,10 @@ class EnvSession:
     - 含义：提供最小闭环三入口：`setup()` -> `sess.rollout(llm=...)` -> `sess.evaluate()`
     - 内容：只负责 orchestration 与自动 repair；不写任何 benchmark-specific 逻辑。
     """
+    # 作用：A small programmatic wrapper for `runner.env_local`.
+    # 能否简略：部分
+    # 原因：规模≈421 行；引用次数≈6（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
+    # 证据：位置=runner/env.py:423；类型=class；引用≈6；规模≈421行
 
     env: EnvHandle
     run_id: str
@@ -442,12 +502,20 @@ class EnvSession:
     trained_model_dir: Path | None = None
 
     def _audit_mode(self) -> str:
+        # 作用：内部符号：EnvSession._audit_mode
+        # 能否简略：部分
+        # 原因：规模≈5 行；引用次数≈4（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
+        # 证据：位置=runner/env.py:445；类型=method；引用≈4；规模≈5行
         m = str(self.audit or "on").strip().lower() or "on"
         if m not in ("on", "off", "warn-only"):
             return "on"
         return m
 
     def _set_llm(self, llm: str | Path) -> None:
+        # 作用：内部符号：EnvSession._set_llm
+        # 能否简略：是
+        # 原因：规模≈5 行；引用次数≈1（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
+        # 证据：位置=runner/env.py:451；类型=method；引用≈1；规模≈5行
         kind, model_dir, model = _resolve_llm(llm)
         self.llm_kind = kind
         self.trained_model_dir = model_dir
@@ -455,6 +523,10 @@ class EnvSession:
 
     def _apply_llm_overrides(self, overrides: dict[str, str]) -> None:
         """Force a consistent LLM contract into env vars (no hardcoded paths/endpoints)."""
+        # 作用：Force a consistent LLM contract into env vars (no hardcoded paths/endpoints).
+        # 能否简略：是
+        # 原因：规模≈20 行；引用次数≈2（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
+        # 证据：位置=runner/env.py:458；类型=method；引用≈2；规模≈20行
         kind = str(self.llm_kind or "").strip() or "local_hf"
         if kind == "remote":
             if not self.llm_model:
@@ -475,6 +547,10 @@ class EnvSession:
         overrides.pop("AIDER_LLM_MODEL", None)
 
     def _base_overrides(self, *, mode: str, extra: dict[str, str] | None) -> dict[str, str]:
+        # 作用：内部符号：EnvSession._base_overrides
+        # 能否简略：部分
+        # 原因：规模≈27 行；引用次数≈3（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
+        # 证据：位置=runner/env.py:478；类型=method；引用≈3；规模≈27行
         out = dict(extra or {})
         _inject_openai_base_compat(out)
         out.setdefault("AIDER_FSM_RUN_ID", str(self.run_id))
@@ -503,6 +579,10 @@ class EnvSession:
         return out
 
     def _apply_runtime_env_inference_overrides(self, overrides: dict[str, str]) -> None:
+        # 作用：内部符号：EnvSession._apply_runtime_env_inference_overrides
+        # 能否简略：是
+        # 原因：规模≈17 行；引用次数≈3（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
+        # 证据：位置=runner/env.py:506；类型=method；引用≈3；规模≈17行
         if self.runtime_env_path is None:
             return
         base, model = _runtime_openai_config(self.runtime_env_path)
@@ -521,6 +601,10 @@ class EnvSession:
             overrides.setdefault("OPENAI_API_KEY", str(overrides.get("OPENAI_API_KEY") or "local"))
 
     def _maybe_teardown(self, *, run_root: Path, overrides: dict[str, str]) -> None:
+        # 作用：内部符号：EnvSession._maybe_teardown
+        # 能否简略：是
+        # 原因：规模≈10 行；引用次数≈3（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
+        # 证据：位置=runner/env.py:524；类型=method；引用≈3；规模≈10行
         try:
             _deploy_teardown(
                 self.env,
@@ -541,6 +625,10 @@ class EnvSession:
         artifacts_dir: Path | None = None,
         repair_iters: int = 3,
     ) -> RolloutCallResult:
+        # 作用：内部符号：EnvSession.rollout
+        # 能否简略：否
+        # 原因：公共 API/关键编排点；规模≈117 行；引用次数≈3（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+        # 证据：位置=runner/env.py:544；类型=method；引用≈3；规模≈117行
         self._set_llm(llm)
 
         run_root = _resolve_run_root(self.env.repo, run_id=self.run_id, artifacts_dir=artifacts_dir)
@@ -657,6 +745,10 @@ class EnvSession:
         artifacts_dir: Path | None = None,
         repair_iters: int = 3,
     ) -> EvaluationCallResult:
+        # 作用：内部符号：EnvSession._evaluation
+        # 能否简略：部分
+        # 原因：规模≈164 行；引用次数≈1（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
+        # 证据：位置=runner/env.py:660；类型=method；引用≈1；规模≈164行
         if not self.llm_kind:
             raise ValueError("missing_llm: call deploy/rollout with llm=model_dir|model_id first")
 
@@ -822,6 +914,10 @@ class EnvSession:
         artifacts_dir: Path | None = None,
         repair_iters: int = 3,
     ) -> EvaluationCallResult:
+        # 作用：内部符号：EnvSession.evaluate
+        # 能否简略：否
+        # 原因：公共 API/关键编排点；规模≈20 行；引用次数≈4（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+        # 证据：位置=runner/env.py:825；类型=method；引用≈4；规模≈20行
         run_root = _resolve_run_root(self.env.repo, run_id=self.run_id, artifacts_dir=artifacts_dir)
         overrides = self._base_overrides(mode=mode, extra=env_overrides)
         try:
@@ -867,6 +963,10 @@ def setup(
     - 内容：若缺少 pipeline.yml，则通过 OpenCode scaffold 合同（pipeline.yml + `.aider_fsm/**`）。
     - 约束：本函数不包含任何 benchmark-specific hardcoding。
     """
+    # 作用：Open an environment handle for a target repo/url and ensure a runnable contract exists.
+    # 能否简略：否
+    # 原因：公共 API/关键编排点；规模≈83 行；引用次数≈21（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/env.py:870；类型=function；引用≈21；规模≈83行
     clones_dir = _resolve_path(clones_dir) if clones_dir is not None else None
     artifacts_dir = _resolve_path(artifacts_dir) if artifacts_dir is not None else None
     env_handle: EnvHandle = open_env(

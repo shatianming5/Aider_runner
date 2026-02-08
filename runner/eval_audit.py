@@ -10,6 +10,10 @@ def audit_eval_script_for_hardcoded_nonzero_score(repo: Path) -> str | None:
     We cannot fully prove "real benchmark execution", but we can block a common
     failure mode: writing a constant non-zero score into metrics.json.
     """
+    # 作用：Best-effort heuristic to catch obvious fake metrics.
+    # 能否简略：否
+    # 原因：规模≈33 行；引用次数≈9（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/eval_audit.py:13；类型=function；引用≈9；规模≈33行
     p = (Path(repo).resolve() / ".aider_fsm" / "stages" / "evaluation.sh").resolve()
     if not p.exists():
         return None
@@ -40,6 +44,10 @@ def audit_eval_script_for_hardcoded_nonzero_score(repo: Path) -> str | None:
 
 
 def _looks_like_python_exec(line_lower: str) -> bool:
+    # 作用：内部符号：_looks_like_python_exec
+    # 能否简略：部分
+    # 原因：规模≈23 行；引用次数≈2（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
+    # 证据：位置=runner/eval_audit.py:43；类型=function；引用≈2；规模≈23行
     s = line_lower.replace('"', "").replace("'", "").strip()
     if not s:
         return False
@@ -70,6 +78,10 @@ def audit_eval_script_has_real_execution(repo: Path, *, extra_markers: list[str]
     The check is benchmark-agnostic and only looks for high-signal "execution markers"
     or doc-derived anchors.
     """
+    # 作用：Heuristic: evaluation.sh should *run* something beyond writing JSON.
+    # 能否简略：否
+    # 原因：规模≈63 行；引用次数≈6（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/eval_audit.py:73；类型=function；引用≈6；规模≈63行
     p = (Path(repo).resolve() / ".aider_fsm" / "stages" / "evaluation.sh").resolve()
     if not p.exists():
         return None
@@ -131,6 +143,10 @@ def audit_eval_script_has_real_execution(repo: Path, *, extra_markers: list[str]
 
 def audit_eval_script_mentions_any_anchor(repo: Path, anchors: list[str]) -> str | None:
     """If we have doc-derived anchors, require evaluation.sh to reference at least one."""
+    # 作用：If we have doc-derived anchors, require evaluation.sh to reference at least one.
+    # 能否简略：否
+    # 原因：规模≈57 行；引用次数≈4（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/eval_audit.py:134；类型=function；引用≈4；规模≈57行
     anchors2 = [str(a).strip().lower() for a in (anchors or []) if str(a).strip()]
     if not anchors2:
         return None

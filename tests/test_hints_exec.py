@@ -8,18 +8,30 @@ from runner.hints_exec import normalize_hint_command, run_hints
 
 
 def test_normalize_hint_command_rewrites_dotted_entrypoint_to_python_module() -> None:
+    # 作用：pytest 测试用例：验证行为契约
+    # 能否简略：否
+    # 原因：测试代码（优先可读性）；规模≈4 行；引用次数≈1（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=tests/test_hints_exec.py:11；类型=function；引用≈1；规模≈4行
     cmd, reason = normalize_hint_command("foo.bar --x 1", env={"AIDER_FSM_PYTHON": "python3"})
     assert reason is None
     assert cmd.startswith("python3 -m foo.bar --x 1")
 
 
 def test_normalize_hint_command_keeps_existing_python_module_invocations() -> None:
+    # 作用：pytest 测试用例：验证行为契约
+    # 能否简略：否
+    # 原因：测试代码（优先可读性）；规模≈4 行；引用次数≈1（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=tests/test_hints_exec.py:17；类型=function；引用≈1；规模≈4行
     cmd, reason = normalize_hint_command("python3 -m foo.bar --x 1", env={"AIDER_FSM_PYTHON": "python3"})
     assert reason is None
     assert cmd == "python3 -m foo.bar --x 1"
 
 
 def test_normalize_hint_command_absolutizes_repo_relative_aider_fsm_python(tmp_path: Path) -> None:
+    # 作用：pytest 测试用例：验证行为契约
+    # 能否简略：否
+    # 原因：测试代码（优先可读性）；规模≈14 行；引用次数≈1（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=tests/test_hints_exec.py:23；类型=function；引用≈1；规模≈14行
     repo = tmp_path / "repo"
     (repo / ".aider_fsm" / "venv" / "bin").mkdir(parents=True, exist_ok=True)
     py = repo / ".aider_fsm" / "venv" / "bin" / "python"
@@ -38,6 +50,10 @@ def test_normalize_hint_command_absolutizes_repo_relative_aider_fsm_python(tmp_p
 def test_run_hints_runs_docker_hints_in_isolated_artifacts_workdir(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    # 作用：pytest 测试用例：验证行为契约
+    # 能否简略：否
+    # 原因：测试代码（优先可读性）；规模≈36 行；引用次数≈1（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=tests/test_hints_exec.py:41；类型=function；引用≈1；规模≈36行
     repo = tmp_path / "repo"
     repo.mkdir(parents=True, exist_ok=True)
     artifacts_dir = tmp_path / "artifacts"
@@ -53,12 +69,24 @@ def test_run_hints_runs_docker_hints_in_isolated_artifacts_workdir(
     seen = {}
 
     class _R:
+        # 作用：内部符号：test_run_hints_runs_docker_hints_in_isolated_artifacts_workdir._R
+        # 能否简略：否
+        # 原因：测试代码（优先可读性）；规模≈5 行；引用次数≈6（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+        # 证据：位置=tests/test_hints_exec.py:56；类型=class；引用≈6；规模≈5行
         def __init__(self, rc: int, out: str = "", err: str = "") -> None:
+            # 作用：内部符号：test_run_hints_runs_docker_hints_in_isolated_artifacts_workdir._R.__init__
+            # 能否简略：是
+            # 原因：测试代码（优先可读性）；规模≈4 行；引用次数≈1（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
+            # 证据：位置=tests/test_hints_exec.py:57；类型=method；引用≈1；规模≈4行
             self.returncode = rc
             self.stdout = out
             self.stderr = err
 
     def fake_run(cmd, *args, **kwargs):  # noqa: ANN001
+        # 作用：内部符号：test_run_hints_runs_docker_hints_in_isolated_artifacts_workdir.fake_run
+        # 能否简略：否
+        # 原因：测试代码（优先可读性）；规模≈7 行；引用次数≈12（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+        # 证据：位置=tests/test_hints_exec.py:62；类型=function；引用≈12；规模≈7行
         if cmd == ["docker", "info"]:
             return _R(0)
         if isinstance(cmd, (list, tuple)) and cmd[:2] == ["bash", "-c"]:
@@ -74,6 +102,10 @@ def test_run_hints_runs_docker_hints_in_isolated_artifacts_workdir(
 
 
 def test_run_hints_runs_openai_codegen_hints_in_isolated_workdir(tmp_path: Path) -> None:
+    # 作用：pytest 测试用例：验证行为契约
+    # 能否简略：否
+    # 原因：测试代码（优先可读性）；规模≈33 行；引用次数≈1（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=tests/test_hints_exec.py:77；类型=function；引用≈1；规模≈33行
     repo = tmp_path / "repo"
     repo.mkdir(parents=True, exist_ok=True)
     (repo / "mytool").mkdir(parents=True, exist_ok=True)
@@ -109,6 +141,10 @@ def test_run_hints_runs_openai_codegen_hints_in_isolated_workdir(tmp_path: Path)
 
 
 def test_run_hints_skips_docker_commands_when_docker_unavailable(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # 作用：pytest 测试用例：验证行为契约
+    # 能否简略：否
+    # 原因：测试代码（优先可读性）；规模≈25 行；引用次数≈1（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=tests/test_hints_exec.py:112；类型=function；引用≈1；规模≈25行
     repo = tmp_path / "repo"
     repo.mkdir(parents=True, exist_ok=True)
 
@@ -118,8 +154,16 @@ def test_run_hints_skips_docker_commands_when_docker_unavailable(tmp_path: Path,
     monkeypatch.setattr("runner.hints_exec.shutil.which", lambda name: "/usr/bin/docker" if name == "docker" else None)
 
     def fake_run(cmd, *args, **kwargs):
+        # 作用：内部符号：test_run_hints_skips_docker_commands_when_docker_unavailable.fake_run
+        # 能否简略：否
+        # 原因：测试代码（优先可读性）；规模≈9 行；引用次数≈12（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+        # 证据：位置=tests/test_hints_exec.py:121；类型=function；引用≈12；规模≈9行
         if cmd == ["docker", "info"]:
             class R:
+                # 作用：内部符号：test_run_hints_skips_docker_commands_when_docker_unavailable.fake_run.R
+                # 能否简略：是
+                # 原因：测试代码（优先可读性）；规模≈4 行；引用次数≈2（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
+                # 证据：位置=tests/test_hints_exec.py:123；类型=class；引用≈2；规模≈4行
                 returncode = 1
                 stdout = ""
                 stderr = "daemon not running"
@@ -136,6 +180,10 @@ def test_run_hints_skips_docker_commands_when_docker_unavailable(tmp_path: Path,
 
 
 def test_run_hints_marks_unrunnable_when_binary_missing(tmp_path: Path) -> None:
+    # 作用：pytest 测试用例：验证行为契约
+    # 能否简略：否
+    # 原因：测试代码（优先可读性）；规模≈10 行；引用次数≈1（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=tests/test_hints_exec.py:139；类型=function；引用≈1；规模≈10行
     repo = tmp_path / "repo"
     repo.mkdir(parents=True, exist_ok=True)
     env = {"AIDER_FSM_HINTS_JSON": '["definitely_missing_binary_for_runner --version"]'}
@@ -148,6 +196,10 @@ def test_run_hints_marks_unrunnable_when_binary_missing(tmp_path: Path) -> None:
 
 
 def test_run_hints_used_anchors_only_when_matched(tmp_path: Path) -> None:
+    # 作用：pytest 测试用例：验证行为契约
+    # 能否简略：否
+    # 原因：测试代码（优先可读性）；规模≈11 行；引用次数≈1（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=tests/test_hints_exec.py:151；类型=function；引用≈1；规模≈11行
     repo = tmp_path / "repo"
     repo.mkdir(parents=True, exist_ok=True)
     env = {
@@ -161,6 +213,10 @@ def test_run_hints_used_anchors_only_when_matched(tmp_path: Path) -> None:
 
 
 def test_run_hints_deduplicates_sanitized_commands(tmp_path: Path) -> None:
+    # 作用：pytest 测试用例：验证行为契约
+    # 能否简略：否
+    # 原因：测试代码（优先可读性）；规模≈11 行；引用次数≈1（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=tests/test_hints_exec.py:164；类型=function；引用≈1；规模≈11行
     repo = tmp_path / "repo"
     repo.mkdir(parents=True, exist_ok=True)
     env = {
@@ -174,6 +230,10 @@ def test_run_hints_deduplicates_sanitized_commands(tmp_path: Path) -> None:
 
 
 def test_run_hints_strict_compat_skips_backend_mismatch(tmp_path: Path) -> None:
+    # 作用：pytest 测试用例：验证行为契约
+    # 能否简略：否
+    # 原因：测试代码（优先可读性）；规模≈21 行；引用次数≈1（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=tests/test_hints_exec.py:177；类型=function；引用≈1；规模≈21行
     repo = tmp_path / "repo"
     repo.mkdir(parents=True, exist_ok=True)
     env = {
@@ -200,6 +260,10 @@ def test_run_hints_skips_followup_openai_after_auth_failure(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    # 作用：pytest 测试用例：验证行为契约
+    # 能否简略：否
+    # 原因：测试代码（优先可读性）；规模≈40 行；引用次数≈1（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=tests/test_hints_exec.py:203；类型=function；引用≈1；规模≈40行
     repo = tmp_path / "repo"
     repo.mkdir(parents=True, exist_ok=True)
     env = {
@@ -215,12 +279,24 @@ def test_run_hints_skips_followup_openai_after_auth_failure(
     monkeypatch.setattr("runner.hints_exec._probe_hint_command", lambda **_kwargs: (True, "ok"))
 
     class _R:
+        # 作用：内部符号：test_run_hints_skips_followup_openai_after_auth_failure._R
+        # 能否简略：否
+        # 原因：测试代码（优先可读性）；规模≈5 行；引用次数≈6（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+        # 证据：位置=tests/test_hints_exec.py:218；类型=class；引用≈6；规模≈5行
         def __init__(self, rc: int, out: str = "", err: str = "") -> None:
+            # 作用：内部符号：test_run_hints_skips_followup_openai_after_auth_failure._R.__init__
+            # 能否简略：是
+            # 原因：测试代码（优先可读性）；规模≈4 行；引用次数≈1（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
+            # 证据：位置=tests/test_hints_exec.py:219；类型=method；引用≈1；规模≈4行
             self.returncode = rc
             self.stdout = out
             self.stderr = err
 
     def fake_run(cmd, *args, **kwargs):  # noqa: ANN001
+        # 作用：内部符号：test_run_hints_skips_followup_openai_after_auth_failure.fake_run
+        # 能否简略：否
+        # 原因：测试代码（优先可读性）；规模≈5 行；引用次数≈12（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+        # 证据：位置=tests/test_hints_exec.py:224；类型=function；引用≈12；规模≈5行
         text = " ".join(cmd) if isinstance(cmd, (list, tuple)) else str(cmd)
         if "evalplus.evaluate" in text:
             return _R(1, out="Error code: 401 - {'error': {'code': 'invalid_api_key'}}")
@@ -239,6 +315,10 @@ def test_run_hints_skips_followup_openai_after_auth_failure(
 
 
 def test_run_hints_require_real_score_fails_when_unparseable(tmp_path: Path) -> None:
+    # 作用：pytest 测试用例：验证行为契约
+    # 能否简略：否
+    # 原因：测试代码（优先可读性）；规模≈11 行；引用次数≈1（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=tests/test_hints_exec.py:242；类型=function；引用≈1；规模≈11行
     repo = tmp_path / "repo"
     repo.mkdir(parents=True, exist_ok=True)
     env = {
@@ -252,6 +332,10 @@ def test_run_hints_require_real_score_fails_when_unparseable(tmp_path: Path) -> 
 
 
 def test_run_hints_require_real_score_parses_pass_at_1(tmp_path: Path) -> None:
+    # 作用：pytest 测试用例：验证行为契约
+    # 能否简略：否
+    # 原因：测试代码（优先可读性）；规模≈11 行；引用次数≈1（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=tests/test_hints_exec.py:255；类型=function；引用≈1；规模≈11行
     repo = tmp_path / "repo"
     repo.mkdir(parents=True, exist_ok=True)
     env = {

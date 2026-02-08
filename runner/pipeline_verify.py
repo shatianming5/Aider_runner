@@ -30,6 +30,10 @@ def stage_rc(stage: StageResult | None) -> int | None:
     - 内容：优先取 failed_index 对应命令的 rc；否则取最后一次执行的 rc；若无结果则返回 None。
     - 可简略：可能（纯辅助函数；但集中实现避免边界处理分散）。
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：规模≈13 行；引用次数≈1（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/pipeline_verify.py:33；类型=function；引用≈1；规模≈13行
     if stage is None or not stage.results:
         return None
     if stage.failed_index is None:
@@ -45,6 +49,10 @@ def stage_failed_cmd(stage: StageResult | None) -> CmdResult | None:
     - 内容：如果 failed_index 存在则返回对应结果；否则返回最后一次结果；用于展示错误尾部与生成修复 prompt。
     - 可简略：可能（小工具；但使得错误输出逻辑统一）。
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：规模≈11 行；引用次数≈2（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/pipeline_verify.py:48；类型=function；引用≈2；规模≈11行
     if stage is None or not stage.results:
         return None
     if stage.failed_index is not None and 0 <= stage.failed_index < len(stage.results):
@@ -58,6 +66,10 @@ def _read_json(path: Path) -> tuple[dict[str, Any] | None, str | None]:
     - 内容：要求是 JSON object（dict）；失败时返回 (None, 错误原因字符串)。
     - 可简略：可能（内部 helper；但把错误信息标准化很有用）。
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：规模≈17 行；引用次数≈10（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/pipeline_verify.py:61；类型=function；引用≈10；规模≈17行
     try:
         raw = path.read_text(encoding="utf-8", errors="replace")
     except Exception as e:
@@ -77,6 +89,10 @@ def _validate_metrics(metrics: dict[str, Any], required_keys: list[str]) -> list
     - 内容：返回缺失 key 列表；为空表示通过。
     - 可简略：可能（非常小的 helper；但逻辑集中更清晰）。
     """
+    # 作用：中文说明：
+    # 能否简略：是
+    # 原因：规模≈11 行；引用次数≈3（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
+    # 证据：位置=runner/pipeline_verify.py:80；类型=function；引用≈3；规模≈11行
     missing: list[str] = []
     for k in required_keys:
         if k not in metrics:
@@ -85,11 +101,19 @@ def _validate_metrics(metrics: dict[str, Any], required_keys: list[str]) -> list
 
 
 def _is_truthy(value: str | None) -> bool:
+    # 作用：内部符号：_is_truthy
+    # 能否简略：否
+    # 原因：规模≈3 行；引用次数≈10（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/pipeline_verify.py:88；类型=function；引用≈10；规模≈3行
     v = str(value or "").strip().lower()
     return v in ("1", "true", "yes", "y", "on")
 
 
 def _parse_json_str_list(raw: str | None) -> list[str]:
+    # 作用：内部符号：_parse_json_str_list
+    # 能否简略：部分
+    # 原因：规模≈17 行；引用次数≈5（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
+    # 证据：位置=runner/pipeline_verify.py:93；类型=function；引用≈5；规模≈17行
     if not raw:
         return []
     try:
@@ -110,6 +134,10 @@ def _parse_json_str_list(raw: str | None) -> list[str]:
 
 def _validate_hints_used(repo: Path, *, expected_anchors: list[str]) -> tuple[bool, str]:
     """Validate `.aider_fsm/hints_used.json` when hint execution is required."""
+    # 作用：Validate `.aider_fsm/hints_used.json` when hint execution is required.
+    # 能否简略：部分
+    # 原因：规模≈31 行；引用次数≈2（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
+    # 证据：位置=runner/pipeline_verify.py:113；类型=function；引用≈2；规模≈31行
     repo = Path(repo).resolve()
     path = (repo / ".aider_fsm" / "hints_used.json").resolve()
     if not path.exists():
@@ -143,6 +171,10 @@ def _validate_hints_used(repo: Path, *, expected_anchors: list[str]) -> tuple[bo
 
 def _validate_hints_run(repo: Path) -> tuple[bool, str]:
     """Validate `.aider_fsm/hints_run.json` when a real (parseable) score is required."""
+    # 作用：Validate `.aider_fsm/hints_run.json` when a real (parseable) score is required.
+    # 能否简略：部分
+    # 原因：规模≈35 行；引用次数≈2（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
+    # 证据：位置=runner/pipeline_verify.py:146；类型=function；引用≈2；规模≈35行
     repo = Path(repo).resolve()
     path = (repo / ".aider_fsm" / "hints_run.json").resolve()
     if not path.exists():
@@ -191,6 +223,10 @@ def _dump_kubectl(
     - 内容：执行一组 `kubectl get ...` 并写入 artifacts；可按 label_selector 导出相关 pod 的日志（tail=2000）。
     - 可简略：是（纯增强诊断能力；不影响核心闭环）。
     """
+    # 作用：中文说明：
+    # 能否简略：部分
+    # 原因：规模≈38 行；引用次数≈2（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
+    # 证据：位置=runner/pipeline_verify.py:194；类型=function；引用≈2；规模≈38行
     out_dir.mkdir(parents=True, exist_ok=True)
     cmds: list[tuple[str, str]] = [
         ("kubectl_get_nodes", "kubectl get nodes -o wide"),
@@ -237,6 +273,10 @@ def _run_stage(
     - 内容：为每个命令支持 retries；应用安全策略（cmd_allowed/looks_interactive）；应用 per-cmd 与 per-stage 总超时；落盘 `<stage>_cmdXX_tryYY_*` 与 `<stage>_summary.json`。
     - 可简略：否（这是 pipeline 执行器的核心；与审计/安全/重试/超时强绑定）。
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：规模≈106 行；引用次数≈9（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/pipeline_verify.py:240；类型=function；引用≈9；规模≈106行
     stage = stage.strip() or "stage"
     env2 = dict(env)
     env2["AIDER_FSM_STAGE"] = stage
@@ -342,6 +382,10 @@ def run_pipeline_verification(
       - artifacts：为每个 stage 写入 cmd/stdout/stderr/result/summary，并在需要时执行 deploy_teardown 与 kubectl dump
     - 可简略：否（runner 的“验收契约”核心入口；删改会影响行为与兼容性）。
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：规模≈675 行；引用次数≈29（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/pipeline_verify.py:345；类型=function；引用≈29；规模≈675行
     artifacts_dir.mkdir(parents=True, exist_ok=True)
     ok = False
     failed_stage: str | None = None
@@ -366,6 +410,10 @@ def run_pipeline_verification(
         - 内容：综合 teardown_cmds 是否为空以及 `always/on_success/on_failure/never` 策略做布尔判断。
         - 可简略：是（纯 helper；可内联到调用点）。
         """
+        # 作用：中文说明：
+        # 能否简略：是
+        # 原因：规模≈17 行；引用次数≈2（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
+        # 证据：位置=runner/pipeline_verify.py:369；类型=function；引用≈2；规模≈17行
         if not teardown_cmds:
             return False
         if teardown_policy == "never":
@@ -402,6 +450,10 @@ def run_pipeline_verification(
     # Sources: allow both the *base* environment and per-stage env injections (env_overrides)
     # since programmatic callers often pass overrides via `pipeline.*_env`.
     def _env_get(name: str) -> str | None:
+        # 作用：内部符号：run_pipeline_verification._env_get
+        # 能否简略：是
+        # 原因：规模≈18 行；引用次数≈2（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
+        # 证据：位置=runner/pipeline_verify.py:405；类型=function；引用≈2；规模≈18行
         v = env_base.get(name)
         if isinstance(v, str) and v.strip():
             return v.strip()
@@ -421,6 +473,10 @@ def run_pipeline_verification(
         return None
 
     def _env_int(name: str) -> int | None:
+        # 作用：内部符号：run_pipeline_verification._env_int
+        # 能否简略：部分
+        # 原因：规模≈9 行；引用次数≈5（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
+        # 证据：位置=runner/pipeline_verify.py:424；类型=function；引用≈5；规模≈9行
         raw = _env_get(name)
         if raw is None:
             return None
@@ -446,6 +502,10 @@ def run_pipeline_verification(
         - 内容：用 `resolve_workdir` 计算实际路径；异常时写 artifacts，并返回 (repo, failed_stage_result)。
         - 可简略：可能（抽出 helper 能统一错误格式与落盘；也可拆成 try/except 重复代码）。
         """
+        # 作用：中文说明：
+        # 能否简略：否
+        # 原因：规模≈12 行；引用次数≈9（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+        # 证据：位置=runner/pipeline_verify.py:449；类型=function；引用≈9；规模≈12行
         try:
             return resolve_workdir(repo, raw), None
         except Exception as e:
@@ -1009,6 +1069,10 @@ def fmt_stage_tail(prefix: str, stage: StageResult | None) -> str:
     - 内容：输出 `[PREFIX_RC] / [PREFIX_STDOUT_TAIL] / [PREFIX_STDERR_TAIL]` 三段，长度受 `STDIO_TAIL_CHARS` 限制。
     - 可简略：可能（只用于构建提示词；但集中格式化便于一致性与测试）。
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：规模≈14 行；引用次数≈10（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/pipeline_verify.py:1012；类型=function；引用≈10；规模≈14行
     res = stage_failed_cmd(stage)
     if res is None:
         return ""

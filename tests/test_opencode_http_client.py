@@ -18,6 +18,10 @@ class _ServerState:
     - 内容：保存期望的 Authorization 值，以及记录所有收到的请求（method/path/body）。
     - 可简略：是（仅用于测试；也可用 dict 代替）。
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：测试代码（优先可读性）；规模≈13 行；引用次数≈6（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=tests/test_opencode_http_client.py:21；类型=class；引用≈6；规模≈13行
 
     expected_auth: str
     requests: list[dict[str, Any]] = field(default_factory=list)
@@ -33,6 +37,10 @@ def _make_handler(state: _ServerState):
     - 内容：实现 health/session/message/config/instance/dispose 的最小 OpenCode HTTP 合同，并记录请求轨迹。
     - 可简略：可能（可以用更小的 handler 覆盖当前测试；但这里集中实现便于复用与调试）。
     """
+    # 作用：中文说明：
+    # 能否简略：部分
+    # 原因：测试代码（优先可读性）；规模≈135 行；引用次数≈5（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
+    # 证据：位置=tests/test_opencode_http_client.py:36；类型=function；引用≈5；规模≈135行
 
     class Handler(BaseHTTPRequestHandler):
         """中文说明：
@@ -40,6 +48,10 @@ def _make_handler(state: _ServerState):
         - 内容：校验 Basic Auth、解析/返回 JSON，并按路径返回固定响应以驱动 OpenCodeClient 走通流程。
         - 可简略：可能（很多分支只为覆盖客户端路径；可按测试需要裁剪）。
         """
+        # 作用：中文说明：
+        # 能否简略：部分
+        # 原因：测试代码（优先可读性）；规模≈126 行；引用次数≈2（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
+        # 证据：位置=tests/test_opencode_http_client.py:43；类型=class；引用≈2；规模≈126行
 
         def log_message(self, _format: str, *_args: Any) -> None:  # pragma: no cover
             """中文说明：
@@ -47,6 +59,10 @@ def _make_handler(state: _ServerState):
             - 内容：直接 return（不输出任何日志）。
             - 可简略：是（纯噪音控制；也可用 logging 配置代替）。
             """
+            # 作用：中文说明：
+            # 能否简略：是
+            # 原因：测试代码（优先可读性）；规模≈7 行；引用次数≈0（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
+            # 证据：位置=tests/test_opencode_http_client.py:50；类型=method；引用≈0；规模≈7行
             return
 
         def _read_json(self) -> Any:
@@ -55,6 +71,10 @@ def _make_handler(state: _ServerState):
             - 内容：按 Content-Length 读取字节并 utf-8 解码；空 body 返回 None。
             - 可简略：是（测试 helper；也可在各 handler 方法内联）。
             """
+            # 作用：中文说明：
+            # 能否简略：是
+            # 原因：测试代码（优先可读性）；规模≈11 行；引用次数≈2（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
+            # 证据：位置=tests/test_opencode_http_client.py:58；类型=method；引用≈2；规模≈11行
             length = int(self.headers.get("Content-Length") or "0")
             raw = self.rfile.read(length) if length > 0 else b""
             if not raw:
@@ -67,6 +87,10 @@ def _make_handler(state: _ServerState):
             - 内容：`json.dumps` → bytes，设置 Content-Type/Length，并写入到 wfile。
             - 可简略：是（测试 helper；也可用更高层框架替代）。
             """
+            # 作用：中文说明：
+            # 能否简略：否
+            # 原因：测试代码（优先可读性）；规模≈12 行；引用次数≈11（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+            # 证据：位置=tests/test_opencode_http_client.py:70；类型=method；引用≈11；规模≈12行
             raw = json.dumps(data, ensure_ascii=False).encode("utf-8")
             self.send_response(code)
             self.send_header("Content-Type", "application/json")
@@ -80,6 +104,10 @@ def _make_handler(state: _ServerState):
             - 内容：不匹配则返回 401 JSON，并阻断后续处理；匹配则返回 True。
             - 可简略：是（测试 helper；可内联到各方法）。
             """
+            # 作用：中文说明：
+            # 能否简略：是
+            # 原因：测试代码（优先可读性）；规模≈11 行；引用次数≈3（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
+            # 证据：位置=tests/test_opencode_http_client.py:83；类型=method；引用≈3；规模≈11行
             got = self.headers.get("Authorization") or ""
             if got != state.expected_auth:
                 self._write_json(401, {"error": "unauthorized"})
@@ -92,6 +120,10 @@ def _make_handler(state: _ServerState):
             - 内容：先校验 auth；记录请求；health 返回 ok，其它路径 404。
             - 可简略：可能（取决于客户端覆盖面；当前为了可读性保留分支）。
             """
+            # 作用：中文说明：
+            # 能否简略：部分
+            # 原因：测试代码（优先可读性）；规模≈13 行；引用次数≈0（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
+            # 证据：位置=tests/test_opencode_http_client.py:95；类型=method；引用≈0；规模≈13行
             if not self._require_auth():
                 return
             state.requests.append({"method": "GET", "path": self.path, "body": None})
@@ -106,6 +138,10 @@ def _make_handler(state: _ServerState):
             - 内容：先校验 auth；读取 JSON；按路径返回固定响应，并做少量 contract assert。
             - 可简略：可能（很多 assert/路径可随测试精简）。
             """
+            # 作用：中文说明：
+            # 能否简略：否
+            # 原因：测试代码（优先可读性）；规模≈43 行；引用次数≈0（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+            # 证据：位置=tests/test_opencode_http_client.py:109；类型=method；引用≈0；规模≈43行
             if not self._require_auth():
                 return
             body = self._read_json()
@@ -150,6 +186,10 @@ def _make_handler(state: _ServerState):
             - 内容：先校验 auth；读取 JSON；断言包含 permission 字段并返回 ok；其它路径 404。
             - 可简略：可能（随客户端实现变化；当前仅覆盖必要路径）。
             """
+            # 作用：中文说明：
+            # 能否简略：部分
+            # 原因：测试代码（优先可读性）；规模≈16 行；引用次数≈0（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
+            # 证据：位置=tests/test_opencode_http_client.py:153；类型=method；引用≈0；规模≈16行
             if not self._require_auth():
                 return
             body = self._read_json()
@@ -170,6 +210,10 @@ def test_opencode_client_http_happy_path(tmp_path: Path):
     - 内容：启动本地 HTTPServer（Basic auth），构造 OpenCodeClient 发消息，断言回复与请求轨迹均符合预期。
     - 可简略：否（是 HTTP 客户端契约的关键端到端覆盖；建议保留）。
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：测试代码（优先可读性）；规模≈44 行；引用次数≈1（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=tests/test_opencode_http_client.py:173；类型=function；引用≈1；规模≈44行
     user = "u"
     pwd = "p"
     token = base64.b64encode(f"{user}:{pwd}".encode("utf-8")).decode("ascii")
@@ -211,6 +255,10 @@ def test_opencode_client_http_happy_path(tmp_path: Path):
 
 
 def test_opencode_client_retries_transient_503(tmp_path: Path):
+    # 作用：pytest 测试用例：验证行为契约
+    # 能否简略：否
+    # 原因：测试代码（优先可读性）；规模≈39 行；引用次数≈1（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=tests/test_opencode_http_client.py:214；类型=function；引用≈1；规模≈39行
     user = "u"
     pwd = "p"
     token = base64.b64encode(f"{user}:{pwd}".encode("utf-8")).decode("ascii")
@@ -253,6 +301,10 @@ def test_opencode_client_retries_transient_503(tmp_path: Path):
 
 def test_opencode_client_retries_empty_message_body(tmp_path: Path):
     """If OpenCode returns 200 with an empty body, the client should treat it as a transient failure and retry."""
+    # 作用：If OpenCode returns 200 with an empty body, the client should treat it as a transient failure and retry.
+    # 能否简略：否
+    # 原因：测试代码（优先可读性）；规模≈37 行；引用次数≈1（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=tests/test_opencode_http_client.py:256；类型=function；引用≈1；规模≈37行
     user = "u"
     pwd = "p"
     token = base64.b64encode(f"{user}:{pwd}".encode("utf-8")).decode("ascii")
@@ -291,6 +343,10 @@ def test_opencode_client_retries_empty_message_body(tmp_path: Path):
 
 
 def test_opencode_client_context_length_fallback_and_prompt_clip(tmp_path: Path):
+    # 作用：pytest 测试用例：验证行为契约
+    # 能否简略：否
+    # 原因：测试代码（优先可读性）；规模≈52 行；引用次数≈1（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=tests/test_opencode_http_client.py:294；类型=function；引用≈1；规模≈52行
     user = "u"
     pwd = "p"
     token = base64.b64encode(f"{user}:{pwd}".encode("utf-8")).decode("ascii")
@@ -345,6 +401,10 @@ def test_opencode_client_context_length_fallback_and_prompt_clip(tmp_path: Path)
 
 
 def test_post_message_retry_recovers_local_transport_error() -> None:
+    # 作用：pytest 测试用例：验证行为契约
+    # 能否简略：否
+    # 原因：测试代码（优先可读性）；规模≈35 行；引用次数≈1（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=tests/test_opencode_http_client.py:348；类型=function；引用≈1；规模≈35行
     client = OpenCodeClient.__new__(OpenCodeClient)
     client._request_retry_attempts = 2
     client._request_retry_backoff_seconds = 0.0
@@ -356,6 +416,10 @@ def test_post_message_retry_recovers_local_transport_error() -> None:
     calls = {"post": 0, "recover": 0}
 
     def fake_post(*, model: Any, text: str, include_context: bool = True) -> Any:
+        # 作用：内部符号：test_post_message_retry_recovers_local_transport_error.fake_post
+        # 能否简略：部分
+        # 原因：测试代码（优先可读性）；规模≈10 行；引用次数≈4（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
+        # 证据：位置=tests/test_opencode_http_client.py:359；类型=function；引用≈4；规模≈10行
         calls["post"] += 1
         if calls["post"] == 1:
             raise OpenCodeRequestError(
@@ -367,6 +431,10 @@ def test_post_message_retry_recovers_local_transport_error() -> None:
         return {"parts": [{"type": "text", "text": "ok"}]}
 
     def fake_recover(*, reason: str) -> None:
+        # 作用：内部符号：test_post_message_retry_recovers_local_transport_error.fake_recover
+        # 能否简略：部分
+        # 原因：测试代码（优先可读性）；规模≈2 行；引用次数≈4（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
+        # 证据：位置=tests/test_opencode_http_client.py:370；类型=function；引用≈4；规模≈2行
         calls["recover"] += 1
 
     client._post_message = fake_post
@@ -382,6 +450,10 @@ def test_post_message_retry_recovers_local_transport_error() -> None:
 
 
 def test_post_message_retry_does_not_recover_for_external_server() -> None:
+    # 作用：pytest 测试用例：验证行为契约
+    # 能否简略：否
+    # 原因：测试代码（优先可读性）；规模≈35 行；引用次数≈1（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=tests/test_opencode_http_client.py:385；类型=function；引用≈1；规模≈35行
     client = OpenCodeClient.__new__(OpenCodeClient)
     client._request_retry_attempts = 1
     client._request_retry_backoff_seconds = 0.0
@@ -393,6 +465,10 @@ def test_post_message_retry_does_not_recover_for_external_server() -> None:
     calls = {"recover": 0}
 
     def fake_post(*, model: Any, text: str, include_context: bool = True) -> Any:
+        # 作用：内部符号：test_post_message_retry_does_not_recover_for_external_server.fake_post
+        # 能否简略：部分
+        # 原因：测试代码（优先可读性）；规模≈7 行；引用次数≈4（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
+        # 证据：位置=tests/test_opencode_http_client.py:396；类型=function；引用≈4；规模≈7行
         raise OpenCodeRequestError(
             method="POST",
             url="http://example.com/session/s1/message",
@@ -401,6 +477,10 @@ def test_post_message_retry_does_not_recover_for_external_server() -> None:
         )
 
     def fake_recover(*, reason: str) -> None:
+        # 作用：内部符号：test_post_message_retry_does_not_recover_for_external_server.fake_recover
+        # 能否简略：部分
+        # 原因：测试代码（优先可读性）；规模≈2 行；引用次数≈4（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
+        # 证据：位置=tests/test_opencode_http_client.py:404；类型=function；引用≈4；规模≈2行
         calls["recover"] += 1
 
     client._post_message = fake_post

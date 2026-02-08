@@ -8,6 +8,10 @@ from typing import Any
 
 
 def _file_meta(path: Path) -> dict[str, Any]:
+    # 作用：内部符号：_file_meta
+    # 能否简略：部分
+    # 原因：规模≈10 行；引用次数≈4（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
+    # 证据：位置=runner/contract_provenance.py:11；类型=function；引用≈4；规模≈10行
     try:
         data = path.read_bytes()
     except Exception:
@@ -27,6 +31,10 @@ def snapshot_contract_files(repo: Path) -> dict[str, dict[str, Any]]:
       exploding to tens of thousands of entries (e.g. venv/site-packages) or
       capturing run artifacts that can be very large/noisy.
     """
+    # 作用：Snapshot contract-relevant files for provenance comparison.
+    # 能否简略：否
+    # 原因：规模≈34 行；引用次数≈10（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/contract_provenance.py:30；类型=function；引用≈10；规模≈34行
     root = Path(repo).resolve()
     out: dict[str, dict[str, Any]] = {}
     out["pipeline.yml"] = _file_meta((root / "pipeline.yml").resolve())
@@ -56,6 +64,10 @@ def snapshot_contract_files(repo: Path) -> dict[str, dict[str, Any]]:
 
 
 def _normalize_rel_to_repo(repo: Path, raw_path: str) -> str | None:
+    # 作用：内部符号：_normalize_rel_to_repo
+    # 能否简略：是
+    # 原因：规模≈13 行；引用次数≈2（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
+    # 证据：位置=runner/contract_provenance.py:59；类型=function；引用≈2；规模≈13行
     try:
         p = Path(str(raw_path or "")).expanduser()
     except Exception:
@@ -72,6 +84,10 @@ def _normalize_rel_to_repo(repo: Path, raw_path: str) -> str | None:
 
 def extract_tool_written_paths(*, repo: Path, tool_trace: list[dict[str, Any]] | None) -> set[str]:
     """Collect repo-relative file paths written via tool calls."""
+    # 作用：Collect repo-relative file paths written via tool calls.
+    # 能否简略：否
+    # 原因：规模≈20 行；引用次数≈2（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/contract_provenance.py:75；类型=function；引用≈2；规模≈20行
     root = Path(repo).resolve()
     writes: set[str] = set()
     for turn in list(tool_trace or []):
@@ -93,6 +109,10 @@ def extract_tool_written_paths(*, repo: Path, tool_trace: list[dict[str, Any]] |
 
 
 def _status(before: dict[str, Any] | None, after: dict[str, Any] | None) -> str:
+    # 作用：内部符号：_status
+    # 能否简略：是
+    # 原因：规模≈12 行；引用次数≈3（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
+    # 证据：位置=runner/contract_provenance.py:96；类型=function；引用≈3；规模≈12行
     b_exists = bool((before or {}).get("exists"))
     a_exists = bool((after or {}).get("exists"))
     if not b_exists and not a_exists:
@@ -107,6 +127,10 @@ def _status(before: dict[str, Any] | None, after: dict[str, Any] | None) -> str:
 
 
 def changed_paths(before: dict[str, dict[str, Any]], after: dict[str, dict[str, Any]]) -> set[str]:
+    # 作用：内部符号：changed_paths
+    # 能否简略：否
+    # 原因：规模≈6 行；引用次数≈3（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/contract_provenance.py:110；类型=function；引用≈3；规模≈6行
     out: set[str] = set()
     for rel in set(before.keys()) | set(after.keys()):
         if _status(before.get(rel), after.get(rel)) != "unchanged":
@@ -124,6 +148,10 @@ def build_contract_provenance_report(
     tool_trace: list[dict[str, Any]] | None,
     runner_written_paths: set[str] | None = None,
 ) -> dict[str, Any]:
+    # 作用：内部符号：build_contract_provenance_report
+    # 能否简略：否
+    # 原因：规模≈58 行；引用次数≈7（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/contract_provenance.py:127；类型=function；引用≈7；规模≈58行
     root = Path(repo).resolve()
     agent_write_paths = extract_tool_written_paths(repo=root, tool_trace=tool_trace)
     runner_write_paths = set(runner_written_paths or set())
@@ -175,5 +203,9 @@ def build_contract_provenance_report(
 
 
 def dump_provenance(path: Path, report: dict[str, Any]) -> None:
+    # 作用：内部符号：dump_provenance
+    # 能否简略：否
+    # 原因：规模≈3 行；引用次数≈5（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/contract_provenance.py:178；类型=function；引用≈5；规模≈3行
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

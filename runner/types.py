@@ -11,6 +11,10 @@ class CmdResult:
     - 内容：保存命令字符串、返回码、stdout/stderr 与是否超时；用于写入 artifacts 与诊断失败原因。
     - 可简略：否（基础数据结构，被多处依赖）。
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：规模≈12 行；引用次数≈24（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/types.py:14；类型=class；引用≈24；规模≈12行
 
     cmd: str
     rc: int
@@ -26,6 +30,10 @@ class StageResult:
     - 内容：包含该阶段所有命令（含重试）的 CmdResult 列表，并用 failed_index 标记首个失败/最终失败位置。
     - 可简略：否（核心验收结构；简化会影响日志与回溯能力）。
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：规模≈10 行；引用次数≈33（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/types.py:29；类型=class；引用≈33；规模≈10行
 
     ok: bool
     results: list[CmdResult]
@@ -39,6 +47,10 @@ class VerificationResult:
     - 内容：聚合 auth/tests/deploy/rollout/evaluation/benchmark 等阶段的 StageResult，并附带 metrics 读取与 required_keys 校验结果。
     - 可简略：否（runner 的核心输出；对外 API 与日志都依赖）。
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：规模≈20 行；引用次数≈41（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/types.py:42；类型=class；引用≈41；规模≈20行
 
     ok: bool
     failed_stage: str | None

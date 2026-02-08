@@ -18,6 +18,10 @@ def tail(text: str, n: int) -> str:
     - 内容：如果文本超过 n，则只保留尾部，避免 artifacts 体积过大。
     - 可简略：可能（非常小的工具函数；但集中使用可统一截断策略）。
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：规模≈9 行；引用次数≈48（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/subprocess_utils.py:21；类型=function；引用≈48；规模≈9行
     if len(text) <= n:
         return text
     return text[-n:]
@@ -29,6 +33,10 @@ def run_cmd(cmd: str, cwd: Path) -> tuple[int, str, str]:
     - 内容：使用 `subprocess.run(..., shell=True, capture_output=True)`，并对 stdout/stderr 做尾部截断。
     - 可简略：可能（与 `run_cmd_capture` 有部分功能重叠，但返回结构不同）。
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：规模≈14 行；引用次数≈5（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/subprocess_utils.py:32；类型=function；引用≈5；规模≈14行
     p = subprocess.run(
         cmd,
         cwd=str(cwd),
@@ -52,6 +60,10 @@ def run_cmd_capture(
     - 内容：支持 timeout；超时返回 rc=124 并标记 timed_out；交互模式用于 `--unattended guided` 的少量场景。
     - 可简略：否（runner 的命令执行/审计核心之一，调用广泛）。
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：规模≈39 行；引用次数≈10（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/subprocess_utils.py:55；类型=function；引用≈10；规模≈39行
     try:
         if interactive:
             p = subprocess.run(
@@ -86,6 +98,10 @@ def limit_text(text: str, limit: int) -> str:
     - 内容：超过限制时保留前缀并追加 `...[truncated]...` 标记。
     - 可简略：可能（小工具；但统一上限很重要）。
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：规模≈9 行；引用次数≈2（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/subprocess_utils.py:89；类型=function；引用≈2；规模≈9行
     if limit <= 0 or len(text) <= limit:
         return text
     return text[:limit] + "\n...[truncated]...\n"
@@ -97,6 +113,10 @@ def write_text(path: Path, text: str) -> None:
     - 内容：自动创建父目录；对内容做 `ARTIFACT_TEXT_LIMIT_CHARS` 截断；用于记录日志与 stage 输出。
     - 可简略：否（集中处理目录创建与截断，避免调用点重复/遗漏）。
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：规模≈8 行；引用次数≈97（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/subprocess_utils.py:100；类型=function；引用≈97；规模≈8行
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(limit_text(text, ARTIFACT_TEXT_LIMIT_CHARS), encoding="utf-8", errors="replace")
 
@@ -107,6 +127,10 @@ def write_json(path: Path, data: Any) -> None:
     - 内容：用于写 summary/state/metrics 等结构化 artifacts。
     - 可简略：可能（小工具；也可用 `json.dump`，但此处统一格式更利于 diff/审计）。
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：规模≈8 行；引用次数≈12（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/subprocess_utils.py:110；类型=function；引用≈12；规模≈8行
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
@@ -117,6 +141,10 @@ def read_text_if_exists(path: Path) -> str:
     - 内容：避免调用点重复写 `exists()` 判断，常用于读取可选配置/历史 artifacts。
     - 可简略：可能（薄封装；但可提升可读性与一致性）。
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：规模≈9 行；引用次数≈10（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/subprocess_utils.py:120；类型=function；引用≈10；规模≈9行
     if not path.exists():
         return ""
     return path.read_text(encoding="utf-8", errors="replace")
@@ -128,6 +156,10 @@ def write_cmd_artifacts(out_dir: Path, prefix: str, res: CmdResult) -> None:
     - 内容：写入 `<prefix>_cmd/stdout/stderr/result.json`，便于离线审计与定位失败。
     - 可简略：否（契约化 artifacts 命名与结构；删改会影响上层读取与测试）。
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：规模≈13 行；引用次数≈17（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/subprocess_utils.py:131；类型=function；引用≈17；规模≈13行
     write_text(out_dir / f"{prefix}_cmd.txt", res.cmd + "\n")
     write_text(out_dir / f"{prefix}_stdout.txt", res.stdout)
     write_text(out_dir / f"{prefix}_stderr.txt", res.stderr)

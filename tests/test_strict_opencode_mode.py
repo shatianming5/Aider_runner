@@ -13,6 +13,10 @@ from runner.pipeline_spec import PipelineSpec
 
 
 def test_env_setup_strict_disables_seed_and_fallback(tmp_path: Path, monkeypatch) -> None:
+    # 作用：pytest 测试用例：验证行为契约
+    # 能否简略：否
+    # 原因：测试代码（优先可读性）；规模≈27 行；引用次数≈1（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=tests/test_strict_opencode_mode.py:16；类型=function；引用≈1；规模≈27行
     repo = tmp_path / "repo"
     repo.mkdir()
     pipeline_path = repo / "pipeline.yml"
@@ -22,6 +26,10 @@ def test_env_setup_strict_disables_seed_and_fallback(tmp_path: Path, monkeypatch
     calls: list[dict] = []
 
     def _fake_open_env(_target: str, **kwargs) -> EnvHandle:
+        # 作用：内部符号：test_env_setup_strict_disables_seed_and_fallback._fake_open_env
+        # 能否简略：部分
+        # 原因：测试代码（优先可读性）；规模≈3 行；引用次数≈4（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
+        # 证据：位置=tests/test_strict_opencode_mode.py:25；类型=function；引用≈4；规模≈3行
         calls.append(dict(kwargs))
         return handle
 
@@ -41,6 +49,10 @@ def test_env_setup_strict_disables_seed_and_fallback(tmp_path: Path, monkeypatch
     assert calls[-1]["write_fallback_pipeline_yml"] is True
 
 def _write_valid_contract(repo: Path) -> None:
+    # 作用：内部符号：_write_valid_contract
+    # 能否简略：否
+    # 原因：测试代码（优先可读性）；规模≈71 行；引用次数≈2（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=tests/test_strict_opencode_mode.py:44；类型=function；引用≈2；规模≈71行
     stages = repo / ".aider_fsm" / "stages"
     stages.mkdir(parents=True, exist_ok=True)
     scripts = {
@@ -114,11 +126,23 @@ def _write_valid_contract(repo: Path) -> None:
 
 
 class _SecondAttemptWritesContractAgent:
+    # 作用：内部符号：_SecondAttemptWritesContractAgent
+    # 能否简略：是
+    # 原因：测试代码（优先可读性）；规模≈14 行；引用次数≈2（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
+    # 证据：位置=tests/test_strict_opencode_mode.py:117；类型=class；引用≈2；规模≈14行
     def __init__(self, repo: Path) -> None:
+        # 作用：内部符号：_SecondAttemptWritesContractAgent.__init__
+        # 能否简略：是
+        # 原因：测试代码（优先可读性）；规模≈3 行；引用次数≈1（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
+        # 证据：位置=tests/test_strict_opencode_mode.py:118；类型=method；引用≈1；规模≈3行
         self.repo = repo
         self.calls = 0
 
     def run(self, _text: str, *, fsm_state: str, iter_idx: int, purpose: str) -> AgentResult:
+        # 作用：内部符号：_SecondAttemptWritesContractAgent.run
+        # 能否简略：否
+        # 原因：测试代码（优先可读性）；规模≈6 行；引用次数≈29（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+        # 证据：位置=tests/test_strict_opencode_mode.py:122；类型=method；引用≈29；规模≈6行
         if purpose == "scaffold_contract":
             self.calls += 1
             if self.calls >= 2:
@@ -126,10 +150,18 @@ class _SecondAttemptWritesContractAgent:
         return AgentResult(assistant_text=f"attempt={self.calls}")
 
     def close(self) -> None:
+        # 作用：内部符号：_SecondAttemptWritesContractAgent.close
+        # 能否简略：否
+        # 原因：测试代码（优先可读性）；规模≈2 行；引用次数≈10（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+        # 证据：位置=tests/test_strict_opencode_mode.py:129；类型=method；引用≈10；规模≈2行
         return
 
 
 def test_open_env_scaffold_retries_and_succeeds_without_runner_fallback(tmp_path: Path) -> None:
+    # 作用：pytest 测试用例：验证行为契约
+    # 能否简略：否
+    # 原因：测试代码（优先可读性）；规模≈16 行；引用次数≈1（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=tests/test_strict_opencode_mode.py:133；类型=function；引用≈1；规模≈16行
     repo = tmp_path / "repo_retry"
     repo.mkdir()
     agent = _SecondAttemptWritesContractAgent(repo)

@@ -28,16 +28,28 @@ else:
 
 
 def _is_truthy(value: str | None) -> bool:
+    # 作用：内部符号：_is_truthy
+    # 能否简略：否
+    # 原因：规模≈3 行；引用次数≈10（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/generic_evaluation.py:31；类型=function；引用≈10；规模≈3行
     v = str(value or "").strip().lower()
     return v in ("1", "true", "yes", "y", "on")
 
 
 def _write_json(path: Path, obj: dict) -> None:
+    # 作用：内部符号：_write_json
+    # 能否简略：否
+    # 原因：规模≈3 行；引用次数≈18（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/generic_evaluation.py:36；类型=function；引用≈18；规模≈3行
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(obj, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
 def _read_json_object(path: Path) -> dict | None:
+    # 作用：内部符号：_read_json_object
+    # 能否简略：否
+    # 原因：规模≈6 行；引用次数≈7（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/generic_evaluation.py:41；类型=function；引用≈7；规模≈6行
     try:
         data = json.loads(path.read_text(encoding="utf-8", errors="replace"))
     except Exception:
@@ -47,6 +59,10 @@ def _read_json_object(path: Path) -> dict | None:
 
 def _reward_average_from_rollout(repo_root: Path) -> tuple[bool, float, dict[str, int] | None, str]:
     """Compute score as average `reward` across rollout samples (best-effort)."""
+    # 作用：Compute score as average `reward` across rollout samples (best-effort).
+    # 能否简略：否
+    # 原因：规模≈55 行；引用次数≈2（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/generic_evaluation.py:50；类型=function；引用≈2；规模≈55行
     rollout_path = (repo_root / ".aider_fsm" / "rollout.json").resolve()
     if not rollout_path.exists():
         return False, 0.0, None, f"missing_rollout_json: {rollout_path}"
@@ -103,6 +119,10 @@ def _reward_average_from_rollout(repo_root: Path) -> tuple[bool, float, dict[str
 
 
 def main() -> int:
+    # 作用：内部符号：main
+    # 能否简略：否
+    # 原因：规模≈65 行；引用次数≈25（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/generic_evaluation.py:106；类型=function；引用≈25；规模≈65行
     repo_root = Path(os.environ.get("AIDER_FSM_REPO_ROOT") or ".").resolve()
     metrics_path = Path(os.environ.get("AIDER_FSM_METRICS_PATH") or ".aider_fsm/metrics.json")
     if not metrics_path.is_absolute():

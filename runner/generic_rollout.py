@@ -13,10 +13,18 @@ from typing import Any
 
 
 def _now_iso() -> str:
+    # 作用：内部符号：_now_iso
+    # 能否简略：是
+    # 原因：规模≈2 行；引用次数≈3（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
+    # 证据：位置=runner/generic_rollout.py:16；类型=function；引用≈3；规模≈2行
     return time.strftime("%Y-%m-%dT%H:%M:%S%z", time.localtime())
 
 
 def _read_text(path: Path, *, max_chars: int) -> str:
+    # 作用：内部符号：_read_text
+    # 能否简略：是
+    # 原因：规模≈8 行；引用次数≈2（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
+    # 证据：位置=runner/generic_rollout.py:20；类型=function；引用≈2；规模≈8行
     try:
         text = path.read_text(encoding="utf-8", errors="replace")
     except Exception:
@@ -27,6 +35,10 @@ def _read_text(path: Path, *, max_chars: int) -> str:
 
 
 def _parse_json_list(raw: str | None) -> list[str]:
+    # 作用：内部符号：_parse_json_list
+    # 能否简略：是
+    # 原因：规模≈17 行；引用次数≈2（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
+    # 证据：位置=runner/generic_rollout.py:30；类型=function；引用≈2；规模≈17行
     if not raw:
         return []
     try:
@@ -46,6 +58,10 @@ def _parse_json_list(raw: str | None) -> list[str]:
 
 
 def _read_json_object(path: Path) -> dict[str, Any] | None:
+    # 作用：内部符号：_read_json_object
+    # 能否简略：否
+    # 原因：规模≈8 行；引用次数≈7（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/generic_rollout.py:49；类型=function；引用≈7；规模≈8行
     try:
         data = json.loads(path.read_text(encoding="utf-8", errors="replace"))
     except Exception:
@@ -56,6 +72,10 @@ def _read_json_object(path: Path) -> dict[str, Any] | None:
 
 
 def _read_hf_manifest(repo_root: Path) -> dict[str, Any] | None:
+    # 作用：内部符号：_read_hf_manifest
+    # 能否简略：是
+    # 原因：规模≈5 行；引用次数≈2（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
+    # 证据：位置=runner/generic_rollout.py:59；类型=function；引用≈2；规模≈5行
     p = (repo_root / "data" / "hf_manifest.json").resolve()
     if not p.exists():
         return None
@@ -64,6 +84,10 @@ def _read_hf_manifest(repo_root: Path) -> dict[str, Any] | None:
 
 def _find_test_parquet(repo_root: Path) -> Path | None:
     """Find a Hugging Face dataset test split parquet file (best-effort)."""
+    # 作用：Find a Hugging Face dataset test split parquet file (best-effort).
+    # 能否简略：是
+    # 原因：规模≈15 行；引用次数≈2（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
+    # 证据：位置=runner/generic_rollout.py:67；类型=function；引用≈2；规模≈15行
     # Common HF snapshot layout includes `main/test-00000-of-00001.parquet`.
     p0 = (repo_root / "main" / "test-00000-of-00001.parquet").resolve()
     if p0.exists():
@@ -80,6 +104,10 @@ def _find_test_parquet(repo_root: Path) -> Path | None:
 
 
 def _resolve_openai_base(repo_root: Path) -> str:
+    # 作用：内部符号：_resolve_openai_base
+    # 能否简略：部分
+    # 原因：规模≈27 行；引用次数≈2（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
+    # 证据：位置=runner/generic_rollout.py:83；类型=function；引用≈2；规模≈27行
     base = (os.environ.get("OPENAI_API_BASE") or os.environ.get("OPENAI_BASE_URL") or "").strip()
     if base:
         return base.rstrip("/")
@@ -109,6 +137,10 @@ def _resolve_openai_base(repo_root: Path) -> str:
 
 
 def _ensure_v1(base: str) -> str:
+    # 作用：内部符号：_ensure_v1
+    # 能否简略：是
+    # 原因：规模≈5 行；引用次数≈2（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
+    # 证据：位置=runner/generic_rollout.py:112；类型=function；引用≈2；规模≈5行
     b = base.rstrip("/")
     if b.endswith("/v1"):
         return b
@@ -116,6 +148,10 @@ def _ensure_v1(base: str) -> str:
 
 
 def _env_int(name: str) -> int | None:
+    # 作用：内部符号：_env_int
+    # 能否简略：部分
+    # 原因：规模≈9 行；引用次数≈5（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
+    # 证据：位置=runner/generic_rollout.py:119；类型=function；引用≈5；规模≈9行
     raw = (os.environ.get(name) or "").strip()
     if not raw:
         return None
@@ -135,6 +171,10 @@ def _chat_completion(
     timeout_seconds: int,
     max_tokens: int | None = None,
 ) -> str:
+    # 作用：内部符号：_chat_completion
+    # 能否简略：部分
+    # 原因：规模≈37 行；引用次数≈3（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
+    # 证据：位置=runner/generic_rollout.py:138；类型=function；引用≈3；规模≈37行
     url = _ensure_v1(base_url) + "/chat/completions"
     headers = {"Content-Type": "application/json"}
     if api_key:
@@ -172,10 +212,18 @@ _RE_FINAL_LINE = re.compile(r"(?im)^\\s*final\\s*[:：]\\s*(?P<ans>.+?)\\s*$")
 
 
 def _norm_number_str(s: str) -> str:
+    # 作用：内部符号：_norm_number_str
+    # 能否简略：部分
+    # 原因：规模≈2 行；引用次数≈4（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
+    # 证据：位置=runner/generic_rollout.py:175；类型=function；引用≈4；规模≈2行
     return str(s or "").strip().replace(",", "")
 
 
 def _to_fraction(s: str) -> Fraction | None:
+    # 作用：内部符号：_to_fraction
+    # 能否简略：是
+    # 原因：规模≈6 行；引用次数≈3（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
+    # 证据：位置=runner/generic_rollout.py:179；类型=function；引用≈3；规模≈6行
     ss = _norm_number_str(s)
     try:
         return Fraction(ss)
@@ -184,6 +232,10 @@ def _to_fraction(s: str) -> Fraction | None:
 
 
 def _extract_final_line(text: str) -> str:
+    # 作用：内部符号：_extract_final_line
+    # 能否简略：是
+    # 原因：规模≈14 行；引用次数≈3（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
+    # 证据：位置=runner/generic_rollout.py:187；类型=function；引用≈3；规模≈14行
     t = str(text or "").strip()
     if not t:
         return ""
@@ -200,12 +252,20 @@ def _extract_final_line(text: str) -> str:
 
 
 def _norm_answer_str(s: str) -> str:
+    # 作用：内部符号：_norm_answer_str
+    # 能否简略：是
+    # 原因：规模≈4 行；引用次数≈3（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
+    # 证据：位置=runner/generic_rollout.py:203；类型=function；引用≈3；规模≈4行
     t = str(s or "").strip().lower()
     t = re.sub(r"\\s+", " ", t)
     return t
 
 
 def _extract_last_number(text: str) -> str:
+    # 作用：内部符号：_extract_last_number
+    # 能否简略：是
+    # 原因：规模≈5 行；引用次数≈3（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
+    # 证据：位置=runner/generic_rollout.py:209；类型=function；引用≈3；规模≈5行
     nums = _RE_NUM.findall(str(text or ""))
     if not nums:
         return ""
@@ -213,6 +273,10 @@ def _extract_last_number(text: str) -> str:
 
 
 def _answers_match(pred_text: str, gold_text: str) -> bool:
+    # 作用：内部符号：_answers_match
+    # 能否简略：是
+    # 原因：规模≈14 行；引用次数≈2（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
+    # 证据：位置=runner/generic_rollout.py:216；类型=function；引用≈2；规模≈14行
     pred = _extract_final_line(pred_text)
     gold = _extract_final_line(gold_text)
 
@@ -245,6 +309,10 @@ def _maybe_rollout_hf_qa_parquet(
     - a test parquet exists
     - the parquet has columns: `question`, `answer`
     """
+    # 作用：Best-effort: if repo_root looks like an HF dataset snapshot, generate QA rollout samples.
+    # 能否简略：否
+    # 原因：规模≈102 行；引用次数≈2（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/generic_rollout.py:248；类型=function；引用≈2；规模≈102行
     if _read_hf_manifest(repo_root) is None:
         return False, {}
 
@@ -333,6 +401,10 @@ def _maybe_rollout_hf_qa_parquet(
 
 
 def _build_prompts(repo_root: Path, *, n: int) -> list[str]:
+    # 作用：内部符号：_build_prompts
+    # 能否简略：部分
+    # 原因：规模≈27 行；引用次数≈2（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
+    # 证据：位置=runner/generic_rollout.py:336；类型=function；引用≈2；规模≈27行
     hints = _parse_json_list(os.environ.get("AIDER_FSM_HINTS_JSON"))
     prompts: list[str] = []
     for h in hints[: max(0, n)]:
@@ -362,6 +434,10 @@ def _build_prompts(repo_root: Path, *, n: int) -> list[str]:
 
 
 def main() -> int:
+    # 作用：内部符号：main
+    # 能否简略：否
+    # 原因：规模≈71 行；引用次数≈25（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=runner/generic_rollout.py:365；类型=function；引用≈25；规模≈71行
     repo_root = Path(os.environ.get("AIDER_FSM_REPO_ROOT") or ".").resolve()
     artifacts_dir = Path(os.environ.get("AIDER_FSM_ARTIFACTS_DIR") or (repo_root / ".aider_fsm" / "artifacts"))
     if not artifacts_dir.is_absolute():

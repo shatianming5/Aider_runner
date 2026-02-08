@@ -13,6 +13,10 @@ def _py_cmd(code: str) -> str:
     - 内容：对解释器路径做 shell quote，用于构造跨平台相对稳定的测试命令。
     - 可简略：是（测试里可直接拼接；保留主要为复用）。
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：测试代码（优先可读性）；规模≈8 行；引用次数≈22（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=tests/test_bootstrap.py:16；类型=function；引用≈22；规模≈8行
     py = shlex.quote(sys.executable)
     return f'{py} -c "{code}"'
 
@@ -23,6 +27,10 @@ def test_load_bootstrap_spec_ok(tmp_path: Path):
     - 内容：写入包含 env/cmds/workdir/timeout/retries 的 YAML，断言解析后的字段与 raw 文本符合预期。
     - 可简略：可能（可拆成更细的字段校验参数化；但当前覆盖面已足够）。
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：测试代码（优先可读性）；规模≈29 行；引用次数≈1（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=tests/test_bootstrap.py:26；类型=function；引用≈1；规模≈29行
     p = tmp_path / "bootstrap.yml"
     p.write_text(
         "\n".join(
@@ -54,6 +62,10 @@ def test_load_bootstrap_spec_invalid_version(tmp_path: Path):
     - 内容：写入 version=2，期望抛出 ValueError。
     - 可简略：是（典型负例测试）。
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：测试代码（优先可读性）；规模≈10 行；引用次数≈1（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=tests/test_bootstrap.py:57；类型=function；引用≈1；规模≈10行
     p = tmp_path / "bootstrap.yml"
     p.write_text("version: 2\n", encoding="utf-8")
     with pytest.raises(ValueError):
@@ -61,6 +73,10 @@ def test_load_bootstrap_spec_invalid_version(tmp_path: Path):
 
 
 def test_load_bootstrap_spec_accepts_boot_wrapper_and_step_mappings(tmp_path: Path) -> None:
+    # 作用：pytest 测试用例：验证行为契约
+    # 能否简略：否
+    # 原因：测试代码（优先可读性）；规模≈28 行；引用次数≈1（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=tests/test_bootstrap.py:64；类型=function；引用≈1；规模≈28行
     p = tmp_path / "bootstrap.yml"
     p.write_text(
         "\n".join(
@@ -96,6 +112,10 @@ def test_run_bootstrap_applies_env_and_runs_cmd(tmp_path: Path, monkeypatch: pyt
     - 内容：bootstrap.yml 设置 `FOO=bar`、`BAR=${FOO}-baz`，命令检查 BAR 是否为 `bar-baz`，并断言 applied_env 正确。
     - 可简略：否（变量展开与落盘 artifacts 是 bootstrap 的关键契约；建议保留该覆盖）。
     """
+    # 作用：中文说明：
+    # 能否简略：否
+    # 原因：测试代码（优先可读性）；规模≈38 行；引用次数≈1（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=tests/test_bootstrap.py:99；类型=function；引用≈1；规模≈38行
     repo = tmp_path
     (repo / ".aider_fsm").mkdir(parents=True, exist_ok=True)
     bootstrap_path = repo / ".aider_fsm" / "bootstrap.yml"
@@ -131,6 +151,10 @@ def test_run_bootstrap_applies_env_and_runs_cmd(tmp_path: Path, monkeypatch: pyt
 
 
 def test_run_bootstrap_writes_parse_warnings_artifact(tmp_path: Path) -> None:
+    # 作用：pytest 测试用例：验证行为契约
+    # 能否简略：否
+    # 原因：测试代码（优先可读性）；规模≈27 行；引用次数≈1（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=tests/test_bootstrap.py:134；类型=function；引用≈1；规模≈27行
     repo = tmp_path
     (repo / ".aider_fsm").mkdir(parents=True, exist_ok=True)
     bootstrap_path = repo / ".aider_fsm" / "bootstrap.yml"
