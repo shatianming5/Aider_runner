@@ -69,3 +69,13 @@ def test_scaffold_contract_retry_prompt_forbids_pseudo_tool_syntax():
     )
     assert "Do NOT output pseudo tool syntax" in p
     assert "emit fake `<tool_result>` blocks" in p
+
+
+def test_scaffold_contract_prompt_recommends_uv_bootstrap():
+    # 作用：pytest 测试用例：验证行为契约
+    # 能否简略：否
+    # 原因：测试代码（优先可读性）；规模≈5 行；引用次数≈1（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
+    # 证据：位置=tests/test_prompts_scaffold_contract.py:??；类型=function；引用≈1；规模≈5行
+    p = make_scaffold_contract_prompt(Path("/tmp/repo"), pipeline_rel="pipeline.yml", require_metrics=True)
+    assert "uv python install" in p
+    assert "uv venv" in p
