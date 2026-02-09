@@ -73,6 +73,40 @@ flowchart TD
     P --> Q["return EvaluationCallResult"]
 ```
 
+## `.aider_fsm/` contract files (target repo)
+
+中文说明：`.aider_fsm/` 是目标仓库的“合同工作区”。合同的输入（脚本/配置）与输出（JSON 结果与证据）都尽量落在这个目录里，方便 runner 做验收、审计与复现。
+
+Stage 脚本（通常会被 `pipeline.yml` 直接调用）：
+
+- `.aider_fsm/stages/tests.sh`: 运行目标仓库的测试（或最小自检），用于 `tests` stage。
+- `.aider_fsm/stages/deploy_setup.sh`: 启动服务/准备运行环境；应写出 `.aider_fsm/runtime_env.json`（JSON object）。
+- `.aider_fsm/stages/deploy_health.sh`: 健康检查；应读取并验证 `.aider_fsm/runtime_env.json` 指向的服务是否可用。
+- `.aider_fsm/stages/deploy_teardown.sh`: 停止服务/清理资源；建议幂等（重复执行也安全）。
+- `.aider_fsm/stages/rollout.sh`: 产生 rollout 产物；应写出 `.aider_fsm/rollout.json`（并在需要时生成 samples JSONL）。
+- `.aider_fsm/stages/evaluation.sh`: 产生评测指标；应写出 `.aider_fsm/metrics.json`（或 `pipeline.yml` 指定的 metrics_path）。
+- `.aider_fsm/stages/benchmark.sh`: 可选的基准跑分 stage；若启用，应写出对应的 metrics JSON。
+
+配置文件（可选，repo-owned）：
+
+- `.aider_fsm/bootstrap.yml`: 环境准备步骤（如创建 venv、安装依赖、预热缓存）。注意：不要把 `pytest/benchmark` 之类的“评测/测试运行”放到 bootstrap 里，应该放在 pipeline stages。
+- `.aider_fsm/actions.yml`: 一次性“动作清单”（例如写入 `.env`、安装依赖、warmup）。runner 会按顺序执行并落盘证据，结束后会 best-effort 删除该文件。
+
+运行输出（run-generated，通常不建议提交到 git）：
+
+- `.aider_fsm/runtime_env.json`: deploy 输出的运行时连接信息（例如 `inference.openai_base_url/base_url`、`inference.model`、`service.base_url` 等）。runner 会用它做 best-effort 的推理端点/模型推断，并把其路径通过 `AIDER_RUNTIME_ENV_PATH` 暴露给后续 stage。
+- `.aider_fsm/rollout.json`: rollout 输出的 JSON 对象；推荐包含 `paths.samples_jsonl` 指向样本 JSONL（每行含 `prompt/completion/reward`）。
+- `.aider_fsm/metrics.json`: evaluation/benchmark 输出的指标 JSON；当 pipeline 要求 `required_keys` 时 runner 会做键存在性校验；若包含 `ok`，还会要求 `ok=true`（避免“占位成功”）。
+- `.aider_fsm/hints_used.json`: 当存在 doc/CI hints 且 `AIDER_FSM_REQUIRE_HINTS=1` 时要求写出，用于证明“至少运行过一个官方/提示命令”（含 `ok/used_anchors/commands/reason`）。
+- `.aider_fsm/hints_run.json`: hints 执行的调试追踪（可选但强烈建议保留），用于定位为什么某些 hints 失败/被跳过。
+
+证据目录（runner-managed）：
+
+- `.aider_fsm/artifacts/<run_id>/...`: 每次运行的可审计证据（stdout/stderr、stage summary、验证结果等）。库 API 默认写在 `.aider_fsm/artifacts/<run_id>/env_api/**`。
+- `.aider_fsm/artifacts/*/scaffold/scaffold_provenance.json`: scaffold 合同的溯源报告（哪些合同文件被写入/修改、来源是谁）。
+- `.aider_fsm/artifacts/*/repair_*/repair_provenance.json`: repair 合同的溯源报告（若发生 repair）。
+- `.aider_fsm/venv/`:（可选）推荐的 repo 内隔离虚拟环境目录，通常由 `.aider_fsm/bootstrap.yml` 创建并通过 `PATH` 覆盖让后续 stage 使用该环境。
+
 ## OpenCode server (optional)
 
 Start a server in your target repo root:
