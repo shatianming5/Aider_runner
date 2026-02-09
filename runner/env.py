@@ -429,6 +429,11 @@ class EnvSession:
     trained_model_dir: Path | None = None
 
     def _audit_mode(self) -> str:
+        """中文说明：
+        - 含义：规范化审计开关（on/off/warn-only）。
+        - 内容：用于控制 evaluation 阶段的脚本审计强度：`on` 表示审计失败会视为失败，`warn-only` 表示只记录告警，`off` 表示跳过审计。
+        - 可简略：可能（小函数；但集中规则可避免各处重复判断与默认值漂移）。
+        """
         # 作用：内部符号：EnvSession._audit_mode
         # 能否简略：部分
         # 原因：规模≈5 行；引用次数≈4（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
@@ -439,7 +444,11 @@ class EnvSession:
         return m
 
     def _apply_llm_overrides(self, overrides: dict[str, str]) -> None:
-        """Force a consistent LLM contract into env vars (no hardcoded paths/endpoints)."""
+        """中文说明：
+        - 含义：把本次运行选定的 LLM 形态写入 env（形成稳定、可复现的“LLM 合同”）。
+        - 内容：`remote` 模式写入 `AIDER_LLM_KIND/AIDER_LLM_MODEL/OPENAI_MODEL`；`local_hf` 模式写入 `AIDER_TRAINED_MODEL_DIR`（并清理 remote 字段）。
+        - 可简略：部分（代码不长，但这是 deploy/rollout/evaluation 一致性与可审计性的关键入口）。
+        """
         # 作用：Force a consistent LLM contract into env vars (no hardcoded paths/endpoints).
         # 能否简略：是
         # 原因：规模≈20 行；引用次数≈2（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
@@ -464,6 +473,11 @@ class EnvSession:
         overrides.pop("AIDER_LLM_MODEL", None)
 
     def _base_overrides(self, *, mode: str, extra: dict[str, str] | None) -> dict[str, str]:
+        """中文说明：
+        - 含义：构造本次 stage 运行的基础环境变量覆盖层（env_overrides）。
+        - 内容：注入 run_id / mode / hints（如有）/ runtime_env_path（如有）等通用字段，并做 OpenAI base URL 兼容注入。
+        - 可简略：部分（属于集中“拼 env”的地方，虽然可拆分，但拆散会让合同字段更难追踪）。
+        """
         # 作用：内部符号：EnvSession._base_overrides
         # 能否简略：部分
         # 原因：规模≈27 行；引用次数≈3（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
@@ -496,6 +510,11 @@ class EnvSession:
         return out
 
     def _apply_runtime_env_inference_overrides(self, overrides: dict[str, str]) -> None:
+        """中文说明：
+        - 含义：根据 `.aider_fsm/runtime_env.json` 推断并补齐推理端所需的 OpenAI 兼容配置。
+        - 内容：优先使用 runtime_env.json 提供的 base_url/model；对 local_hf 模式设置默认 OPENAI_API_KEY=local；避免被宿主环境里的旧配置污染。
+        - 可简略：部分（逻辑不复杂，但对“本地推理端点自动复用”很关键）。
+        """
         # 作用：内部符号：EnvSession._apply_runtime_env_inference_overrides
         # 能否简略：是
         # 原因：规模≈17 行；引用次数≈3（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
@@ -527,6 +546,11 @@ class EnvSession:
         artifacts_dir: Path | None = None,
         repair_iters: int = 3,
     ) -> RolloutCallResult:
+        """中文说明：
+        - 含义：执行一次完整 rollout 流程（deploy -> rollout），必要时自动触发合同修复（repair）。
+        - 内容：为每次 attempt 写入 artifacts；失败时调用 OpenCode 修复 `.aider_fsm/**` 后重试；成功时返回 rollout.json 路径与验证结果。
+        - 可简略：否（这是对外 API 的核心编排点，包含重试/修复/落盘证据，简化会降低可诊断性）。
+        """
         # 作用：内部符号：EnvSession.rollout
         # 能否简略：否
         # 原因：公共 API/关键编排点；规模≈117 行；引用次数≈3（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
@@ -658,6 +682,11 @@ class EnvSession:
         artifacts_dir: Path | None = None,
         repair_iters: int = 3,
     ) -> EvaluationCallResult:
+        """中文说明：
+        - 含义：内部实现：执行 evaluation（以及必要时的 deploy/rollout），并在失败时触发 repair 重试。
+        - 内容：优先走“复用 runtime_env 的快速路径”（仅跑 evaluation）；否则走完整 deploy -> rollout -> evaluation；可选进行脚本审计与 metrics 合同校验。
+        - 可简略：部分（逻辑较长，可拆分子步骤；但不建议完全拆散以免编排语义分裂）。
+        """
         # 作用：内部符号：EnvSession._evaluation
         # 能否简略：部分
         # 原因：规模≈164 行；引用次数≈1（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
@@ -858,6 +887,11 @@ class EnvSession:
         artifacts_dir: Path | None = None,
         repair_iters: int = 3,
     ) -> EvaluationCallResult:
+        """中文说明：
+        - 含义：执行 evaluation（写出 metrics.json），并在必要时自动 teardown。
+        - 内容：可选接收 `llm` 作为便捷参数（覆盖 session 的 LLM 选择）；内部调用 `_evaluation()`，最后 best-effort 执行 deploy_teardown。
+        - 可简略：否（公共 API；承诺“最终 teardown”语义，简化会改变外部行为预期）。
+        """
         # 作用：内部符号：EnvSession.evaluate
         # 能否简略：否
         # 原因：公共 API/关键编排点；规模≈20 行；引用次数≈4（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性

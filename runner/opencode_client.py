@@ -258,7 +258,11 @@ class OpenCodeClient(AgentClient):
             self._server_log_file = None
 
     def _stop_local_server(self) -> None:
-        """Best-effort stop for locally-owned OpenCode server process."""
+        """中文说明：
+        - 含义：best-effort 停止由当前 OpenCodeClient 启动的本地 server 进程。
+        - 内容：先尝试调用 `/instance/dispose` 做优雅释放；随后 terminate/kill 进程组；最后关闭 server log 文件句柄。
+        - 可简略：部分（可抽更小的进程清理 helper；但必须保留“不泄漏后台进程”的语义）。
+        """
         # 作用：Best-effort stop for locally-owned OpenCode server process.
         # 能否简略：部分
         # 原因：规模≈36 行；引用次数≈2（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联

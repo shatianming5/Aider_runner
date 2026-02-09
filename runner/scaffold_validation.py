@@ -27,6 +27,11 @@ class ScaffoldValidationReport:
 
     @property
     def errors(self) -> list[str]:
+        """中文说明：
+        - 含义：把各类错误字段汇总成统一的 `list[str]`（供上层统一判断/展示）。
+        - 内容：把 missing_files/stage_script_errors/bootstrap_errors 统一加上前缀，避免调用点重复拼接字符串。
+        - 可简略：是（只是汇总视图；如果愿意也可在调用点直接展开各字段）。
+        """
         # 作用：内部符号：ScaffoldValidationReport.errors
         # 能否简略：是
         # 原因：规模≈7 行；引用次数≈0（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
