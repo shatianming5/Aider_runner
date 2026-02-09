@@ -129,6 +129,7 @@ sess = runner_env.setup(
 
 ## Docs
 
+- `docs/README.md` (中文索引)
 - `docs/overview.md`
 - `docs/env_api.md`
 - `docs/pipeline_spec.md`

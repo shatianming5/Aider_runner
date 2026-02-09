@@ -1,4 +1,6 @@
-# Verification (smoke + full-lite)
+# 验证方法（smoke + full-lite）
+
+本文档：`docs/verification.md`
 
 目标：证明库三入口可以在真实 repo benchmark 上跑通，并产出可审计证据。
 
@@ -12,7 +14,7 @@ sess.rollout(llm="deepseek-v3.2", ...)
 sess.evaluate(...)
 ```
 
-## Preflight
+## 运行前准备（Preflight）
 
 - OpenCode 可用（用于缺少 `pipeline.yml` 时 scaffold/repair）：
   - `opencode` CLI 已安装
@@ -21,7 +23,7 @@ sess.evaluate(...)
   - `OPENAI_API_KEY` 已设置
   - 可选：`OPENAI_API_BASE` / `OPENAI_BASE_URL`（OpenAI-compatible endpoint）
 
-## Smoke (strict)
+## Smoke（strict）
 
 两个目标 repo（不跑 GSM8K）：
 
@@ -73,7 +75,7 @@ for t in TARGETS:
 PY
 ```
 
-## Full-lite
+## Full-lite（缩短版 full）
 
 定义：仍走 `mode="full"`，但通过上限缩短运行时间（避免完整 full 过长）。
 
@@ -124,7 +126,7 @@ for t in TARGETS:
 PY
 ```
 
-## Evidence checklist
+## 证据清单（Evidence checklist）
 
 每个 target 至少保留这些证据（用于审计与复现）：
 
@@ -139,3 +141,10 @@ PY
   - `.aider_fsm/rollout.json`
   - `.aider_fsm/metrics.json`
   - `.aider_fsm/hints_used.json`（当存在 hints 且 `AIDER_FSM_REQUIRE_HINTS=1` 时）
+
+## 相关实现文件（代码指向）
+
+- `runner/env.py`: 对外 `setup/rollout/evaluate` 编排与 repair 重试
+- `runner/env_local.py`: deploy/rollout/evaluation 的本地执行逻辑
+- `runner/pipeline_verify.py`: pipeline stage 执行 + 产物/metrics 验收
+- `runner/contract_provenance.py`: scaffold/repair provenance 证据生成

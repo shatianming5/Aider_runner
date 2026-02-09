@@ -1,65 +1,75 @@
-# Metrics schema (recommended)
+# 指标（metrics）schema（推荐）
 
-The runner validates that `evaluation.required_keys` exist in the JSON at `evaluation.metrics_path` (preferred),
-or that `benchmark.required_keys` exist in the JSON at `benchmark.metrics_path`.
-To make results comparable across repos (evaluation + rollout + post-training), this doc recommends a stable schema.
+本文档：`docs/metrics_schema.md`
 
-## File(s)
+runner 会对 `evaluation.metrics_path`（推荐）或 `benchmark.metrics_path` 指向的指标 JSON 做结构化校验：
 
-- `evaluation.metrics_path` or `benchmark.metrics_path` (required if you want metrics validation)
-- Rollout artifacts (recommended for post-training RL):
+- 当配置了 `evaluation.required_keys` 时：要求这些 key 必须存在于 `evaluation.metrics_path` 的 JSON object 中
+- 当配置了 `benchmark.required_keys` 时：要求这些 key 必须存在于 `benchmark.metrics_path` 的 JSON object 中
+
+为了让不同目标仓库的结果更易比较（evaluation + rollout + post-training），本文推荐一个尽量稳定的 metrics schema。
+
+## 相关文件（目标仓库侧）
+
+- `evaluation.metrics_path` 或 `benchmark.metrics_path`：指标 JSON（若你要开启 metrics 验证，这是必须的）
+- Rollout 产物（用于 post-training/RL，强烈建议）：
   - `.aider_fsm/rollout.json`
-  - `rollout.json.paths.samples_jsonl` → JSONL samples file under `$AIDER_FSM_ARTIFACTS_DIR`
+  - `rollout.json.paths.samples_jsonl`：样本 JSONL 文件路径（通常在 `$AIDER_FSM_ARTIFACTS_DIR` 或 `.aider_fsm/` 下）
 
-## Minimal metrics JSON
+## 最小可用 metrics JSON（建议）
 
-Recommended minimum:
+建议最小字段：
 
-- `ok`: boolean (true only when the run produced a real score; not “all tests passed”)
-- `score`: number (or `eval.score`)
-- `ts`: ISO timestamp string
-- `run_id`: string (you can copy `AIDER_FSM_RUN_ID`)
+- `ok`: boolean（只有当“真实跑出了分数”才为 true；不要把“测试全过”等价为 ok）
+- `score`: number（或你也可以用 `eval.score`，但建议同时保留顶层 `score` 便于通用处理）
+- `ts`: ISO 时间戳字符串
+- `run_id`: string（可直接复用 `AIDER_FSM_RUN_ID`）
 
-## Recommended keys by area
+## 按场景推荐字段
 
-### Evaluation
+### Evaluation（评测）
 
-- `eval.score`: overall scalar score (primary KPI)
-- `eval.details`: optional object/array for per-task breakdown
-- (optional but recommended when using doc/CI hints):
-  - `.aider_fsm/hints_used.json` (proof that an “official” command was executed)
-  - `.aider_fsm/hints_run.json` (debug trace of attempted commands)
+- `eval.score`: 总分（主 KPI）
+- `eval.details`: 可选，object/array，记录分项/子任务细节
+- （可选但强烈建议，当使用 doc/CI hints 时）
+  - `.aider_fsm/hints_used.json`：证明“确实运行过官方/提示命令”
+  - `.aider_fsm/hints_run.json`：hints 执行的调试追踪
 
-### Rollout (post-training RL)
+### Rollout（post-training / RL）
 
-At minimum, rollout should produce:
+rollout 至少应产出：
 
-- `.aider_fsm/rollout.json` (JSON object) with:
+- `.aider_fsm/rollout.json`（JSON object），建议包含：
   - `ok`: boolean
-  - `paths.samples_jsonl`: string path to a JSONL file
+  - `paths.samples_jsonl`: string（指向一个 JSONL 文件）
 
-Samples JSONL schema (one JSON object per line; benchmark-agnostic):
+Samples JSONL schema（每行一个 JSON object，benchmark-agnostic）：
 
 - `prompt`: string
 - `completion`: string
 - `reward`: number
-- `meta`: object (optional)
+- `meta`: object（可选）
 
-Additional recommended rollout keys (optional):
+rollout 额外推荐字段（可选）：
 
 - `n_episodes`: integer
-- `success_rate`: number in `[0, 1]`
-- `failures_by_type`: object mapping failure type -> count
+- `success_rate`: number（范围 `[0, 1]`）
+- `failures_by_type`: object（失败类型 -> 次数）
 - `avg_latency_ms`: number
 
-### Training (post-training)
+### Training（post-training）
 
 - `train.ok`: boolean
 - `train.steps`: integer
 - `train.wall_time_s`: number
-- `train.loss`: number (optional)
+- `train.loss`: number（可选）
 
-## Notes
+## 备注
 
-- Keep the metrics JSON small and stable; write full logs to artifacts.
-- Use `AIDER_FSM_*` env vars to embed provenance in metrics and rollout artifacts.
+- 建议保持 metrics JSON 小而稳定；完整日志写入 `.aider_fsm/artifacts/<run_id>/...`。
+- 可用 `AIDER_FSM_*` 环境变量把 provenance（run_id、stage、artifacts_dir 等）写回到 metrics/rollout 里，便于审计与复现。
+
+## 相关实现文件（代码指向）
+
+- `runner/pipeline_verify.py`: metrics_path/required_keys 的校验逻辑
+- `runner/pipeline_spec.py`: `pipeline.yml` 中 evaluation/benchmark 字段的解析与规范化
