@@ -232,54 +232,47 @@ def _try_json(text: str) -> dict[str, Any] | None:
         # JSON escape. Models often include `\${...}` when trying to prevent shell expansion.
         # Fix by doubling any backslash that does not introduce a valid JSON escape sequence,
         # but only when inside JSON double-quoted strings.
-        def _repair_invalid_string_escapes(raw: str) -> str:
-            # 作用：内部符号：_try_json._repair_invalid_string_escapes
-            # 能否简略：否
-            # 原因：规模≈42 行；引用次数≈3（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
-            # 证据：位置=runner/opencode_tooling.py:208；类型=function；引用≈3；规模≈42行
-            valid_next = {'"', "\\", "/", "b", "f", "n", "r", "t", "u"}
-            out: list[str] = []
-            in_string = False
-            escaped = False
-            i = 0
-            while i < len(raw):
-                ch = raw[i]
-                if not in_string:
-                    out.append(ch)
-                    if ch == '"':
-                        in_string = True
-                    i += 1
-                    continue
+        valid_next = {'"', "\\", "/", "b", "f", "n", "r", "t", "u"}
+        out: list[str] = []
+        in_string = False
+        escaped = False
+        i = 0
+        while i < len(s):
+            ch = s[i]
+            if not in_string:
+                out.append(ch)
+                if ch == '"':
+                    in_string = True
+                i += 1
+                continue
 
-                if escaped:
-                    out.append(ch)
-                    escaped = False
-                    i += 1
-                    continue
+            if escaped:
+                out.append(ch)
+                escaped = False
+                i += 1
+                continue
 
-                if ch == "\\":
-                    if i + 1 >= len(raw):
-                        out.append("\\\\")
-                        i += 1
-                        continue
-                    nxt = raw[i + 1]
-                    if nxt in valid_next:
-                        out.append("\\")
-                        escaped = True
-                        i += 1
-                        continue
-                    # Invalid escape sequence: preserve the backslash as a literal char.
+            if ch == "\\":
+                if i + 1 >= len(s):
                     out.append("\\\\")
                     i += 1
                     continue
-
-                out.append(ch)
-                if ch == '"':
-                    in_string = False
+                nxt = s[i + 1]
+                if nxt in valid_next:
+                    out.append("\\")
+                    escaped = True
+                    i += 1
+                    continue
+                # Invalid escape sequence: preserve the backslash as a literal char.
+                out.append("\\\\")
                 i += 1
-            return "".join(out)
+                continue
 
-        repaired_escapes = _repair_invalid_string_escapes(s)
+            out.append(ch)
+            if ch == '"':
+                in_string = False
+            i += 1
+        repaired_escapes = "".join(out)
         if repaired_escapes != s:
             try:
                 data = json.loads(repaired_escapes)
@@ -296,7 +289,46 @@ def _try_json(text: str) -> dict[str, Any] | None:
                 return data if isinstance(data, dict) else None
             except Exception:
                 # If key-quote repair succeeded but invalid escapes remain, try both together.
-                repaired2 = _repair_invalid_string_escapes(repaired)
+                out = []
+                in_string = False
+                escaped = False
+                i = 0
+                while i < len(repaired):
+                    ch = repaired[i]
+                    if not in_string:
+                        out.append(ch)
+                        if ch == '"':
+                            in_string = True
+                        i += 1
+                        continue
+
+                    if escaped:
+                        out.append(ch)
+                        escaped = False
+                        i += 1
+                        continue
+
+                    if ch == "\\":
+                        if i + 1 >= len(repaired):
+                            out.append("\\\\")
+                            i += 1
+                            continue
+                        nxt = repaired[i + 1]
+                        if nxt in valid_next:
+                            out.append("\\")
+                            escaped = True
+                            i += 1
+                            continue
+                        # Invalid escape sequence: preserve the backslash as a literal char.
+                        out.append("\\\\")
+                        i += 1
+                        continue
+
+                    out.append(ch)
+                    if ch == '"':
+                        in_string = False
+                    i += 1
+                repaired2 = "".join(out)
                 if repaired2 != repaired:
                     try:
                         data = json.loads(repaired2)

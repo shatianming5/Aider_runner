@@ -49,18 +49,16 @@ def _bootstrap_artifacts_tail(deploy_artifacts_dir: Path) -> str:
     except Exception:
         stderr_paths = []
 
-    def _mtime(p: Path) -> float:
-        # 作用：内部符号：_bootstrap_artifacts_tail._mtime
-        # 能否简略：部分
-        # 原因：规模≈5 行；引用次数≈4（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
-        # 证据：位置=runner/contract_repair.py:71；类型=function；引用≈4；规模≈5行
-        try:
-            return float(p.stat().st_mtime)
-        except Exception:
-            return 0.0
-
     if stderr_paths:
-        newest = sorted(stderr_paths, key=lambda p: (_mtime(p), p.name), reverse=True)[0]
+        keyed: list[tuple[float, str, Path]] = []
+        for p in stderr_paths:
+            try:
+                mt = float(p.stat().st_mtime)
+            except Exception:
+                mt = 0.0
+            keyed.append((mt, p.name, p))
+        keyed.sort(key=lambda t: (t[0], t[1]), reverse=True)
+        newest = keyed[0][2]
         base = newest.name[: -len("_stderr.txt")] if newest.name.endswith("_stderr.txt") else newest.name
         cmd_tail = _read_text_tail(bdir / f"{base}_cmd.txt", n=2000).strip()
         out_tail = _read_text_tail(bdir / f"{base}_stdout.txt", n=4000).strip()

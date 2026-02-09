@@ -314,18 +314,11 @@ def _validate_rollout_samples(
     distinct_target = 1 if not expected_min or expected_min <= 1 else min(10, int(expected_min))
     qa_questions = _hf_parquet_qa_question_samples(repo, max_questions=20) if expected_min is not None else None
 
-    def _norm_ws(s: str) -> str:
-        # 作用：内部符号：_validate_rollout_samples._norm_ws
-        # 能否简略：是
-        # 原因：规模≈2 行；引用次数≈3（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
-        # 证据：位置=runner/env.py:339；类型=function；引用≈3；规模≈2行
-        return " ".join(str(s or "").strip().lower().split())
-
     qa_q_norms: list[str] = []
     if isinstance(qa_questions, list):
         seen: set[str] = set()
         for q in qa_questions:
-            qn = _norm_ws(q)
+            qn = " ".join(str(q or "").strip().lower().split())
             if not qn:
                 continue
             if qn in seen:
@@ -364,7 +357,7 @@ def _validate_rollout_samples(
                     if len(distinct_prompts) < diversity_scan_cap:
                         distinct_prompts.add(prompt)
                         if qa_anchor_target > 0 and len(matched_anchors) < qa_anchor_target:
-                            pn = _norm_ws(prompt)
+                            pn = " ".join(str(prompt or "").strip().lower().split())
                             for qn in qa_q_norms:
                                 if qn and qn in pn:
                                     matched_anchors.add(qn)

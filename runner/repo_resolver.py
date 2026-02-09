@@ -539,18 +539,15 @@ def _find_reusable_clone(base: Path, *, prefix: str) -> Path | None:
         except Exception:
             continue
 
-    def _mtime(path: Path) -> float:
-        # 作用：内部符号：_find_reusable_clone._mtime
-        # 能否简略：部分
-        # 原因：规模≈5 行；引用次数≈4（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
-        # 证据：位置=runner/repo_resolver.py:491；类型=function；引用≈4；规模≈5行
+    reusable_with_mtime: list[tuple[float, Path]] = []
+    for p in reusable:
         try:
-            return float(path.stat().st_mtime)
+            mt = float(p.stat().st_mtime)
         except Exception:
-            return 0.0
-
-    reusable.sort(key=_mtime, reverse=True)
-    return reusable[0].resolve() if reusable else None
+            mt = 0.0
+        reusable_with_mtime.append((mt, p))
+    reusable_with_mtime.sort(key=lambda t: t[0], reverse=True)
+    return reusable_with_mtime[0][1].resolve() if reusable_with_mtime else None
 
 
 def prepare_repo(repo_arg: str, *, clones_dir: Path | None = None) -> PreparedRepo:

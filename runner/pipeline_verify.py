@@ -278,28 +278,6 @@ def run_pipeline_verification(
     teardown_policy = (pipeline.deploy_teardown_policy if pipeline else "never").lower()
     kubectl_dump_enabled = bool(pipeline and pipeline.kubectl_dump_enabled)
 
-    def _teardown_allowed(success: bool) -> bool:
-        """中文说明：
-        - 含义：根据 teardown_policy 判断是否允许执行 deploy teardown。
-        - 内容：综合 teardown_cmds 是否为空以及 `always/on_success/on_failure/never` 策略做布尔判断。
-        - 可简略：是（纯 helper；可内联到调用点）。
-        """
-        # 作用：中文说明：
-        # 能否简略：是
-        # 原因：规模≈17 行；引用次数≈2（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
-        # 证据：位置=runner/pipeline_verify.py:369；类型=function；引用≈2；规模≈17行
-        if not teardown_cmds:
-            return False
-        if teardown_policy == "never":
-            return False
-        if teardown_policy == "always":
-            return True
-        if teardown_policy == "on_success":
-            return success
-        if teardown_policy == "on_failure":
-            return not success
-        return False
-
     env_base = dict(os.environ)
     runner_root = Path(__file__).resolve().parents[1]
     env_base.setdefault("AIDER_FSM_RUNNER_ROOT", str(runner_root))
@@ -323,46 +301,56 @@ def run_pipeline_verification(
     #
     # Sources: allow both the *base* environment and per-stage env injections (env_overrides)
     # since programmatic callers often pass overrides via `pipeline.*_env`.
-    def _env_get(name: str) -> str | None:
-        # 作用：内部符号：run_pipeline_verification._env_get
-        # 能否简略：是
-        # 原因：规模≈18 行；引用次数≈2（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
-        # 证据：位置=runner/pipeline_verify.py:405；类型=function；引用≈2；规模≈18行
-        v = env_base.get(name)
-        if isinstance(v, str) and v.strip():
-            return v.strip()
-        if pipeline is None:
-            return None
-        for m in (
-            pipeline.auth_env,
-            pipeline.tests_env,
-            pipeline.deploy_env,
-            pipeline.rollout_env,
-            pipeline.evaluation_env,
-            pipeline.benchmark_env,
-        ):
-            vv = m.get(name) if isinstance(m, dict) else None
-            if isinstance(vv, str) and vv.strip():
-                return vv.strip()
-        return None
-
-    def _env_int(name: str) -> int | None:
-        # 作用：内部符号：run_pipeline_verification._env_int
-        # 能否简略：部分
-        # 原因：规模≈9 行；引用次数≈5（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
-        # 证据：位置=runner/pipeline_verify.py:424；类型=function；引用≈5；规模≈9行
-        raw = _env_get(name)
-        if raw is None:
-            return None
-        try:
-            n = int(str(raw).strip())
-        except Exception:
-            return None
-        return n if n > 0 else None
-
     if pipeline is not None:
-        max_cmd = _env_int("AIDER_FSM_MAX_CMD_SECONDS")
-        max_total = _env_int("AIDER_FSM_MAX_TOTAL_SECONDS")
+        max_cmd = None
+        raw = env_base.get("AIDER_FSM_MAX_CMD_SECONDS")
+        if isinstance(raw, str) and raw.strip():
+            raw = raw.strip()
+        else:
+            raw = None
+            for m in (
+                pipeline.auth_env,
+                pipeline.tests_env,
+                pipeline.deploy_env,
+                pipeline.rollout_env,
+                pipeline.evaluation_env,
+                pipeline.benchmark_env,
+            ):
+                vv = m.get("AIDER_FSM_MAX_CMD_SECONDS") if isinstance(m, dict) else None
+                if isinstance(vv, str) and vv.strip():
+                    raw = vv.strip()
+                    break
+        if raw is not None:
+            try:
+                n = int(str(raw).strip())
+            except Exception:
+                n = None
+            max_cmd = n if isinstance(n, int) and n > 0 else None
+
+        max_total = None
+        raw = env_base.get("AIDER_FSM_MAX_TOTAL_SECONDS")
+        if isinstance(raw, str) and raw.strip():
+            raw = raw.strip()
+        else:
+            raw = None
+            for m in (
+                pipeline.auth_env,
+                pipeline.tests_env,
+                pipeline.deploy_env,
+                pipeline.rollout_env,
+                pipeline.evaluation_env,
+                pipeline.benchmark_env,
+            ):
+                vv = m.get("AIDER_FSM_MAX_TOTAL_SECONDS") if isinstance(m, dict) else None
+                if isinstance(vv, str) and vv.strip():
+                    raw = vv.strip()
+                    break
+        if raw is not None:
+            try:
+                n = int(str(raw).strip())
+            except Exception:
+                n = None
+            max_total = n if isinstance(n, int) and n > 0 else None
         if max_cmd is not None or max_total is not None:
             pipeline = replace(
                 pipeline,
@@ -370,27 +358,17 @@ def run_pipeline_verification(
                 security_max_total_seconds=max_total if max_total is not None else pipeline.security_max_total_seconds,
             )
 
-    def _workdir_or_fail(stage: str, raw: str | None) -> tuple[Path, StageResult | None]:
-        """中文说明：
-        - 含义：解析某个 stage 的 workdir；失败时返回可序列化的 StageResult 错误。
-        - 内容：用 `resolve_workdir` 计算实际路径；异常时写 artifacts，并返回 (repo, failed_stage_result)。
-        - 可简略：可能（抽出 helper 能统一错误格式与落盘；也可拆成 try/except 重复代码）。
-        """
-        # 作用：中文说明：
-        # 能否简略：否
-        # 原因：规模≈12 行；引用次数≈9（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
-        # 证据：位置=runner/pipeline_verify.py:449；类型=function；引用≈9；规模≈12行
-        try:
-            return resolve_workdir(repo, raw), None
-        except Exception as e:
-            err = CmdResult(cmd=f"resolve_workdir {raw}", rc=2, stdout="", stderr=str(e), timed_out=False)
-            write_cmd_artifacts(artifacts_dir, f"{stage}_workdir_error", err)
-            return repo, StageResult(ok=False, results=[err], failed_index=0)
-
     try:
         if pipeline and pipeline.auth_cmds:
             auth_env = safe_env(env_base, pipeline.auth_env, unattended=unattended)
-            auth_workdir, auth_wd_err = _workdir_or_fail("auth", pipeline.auth_workdir)
+            try:
+                auth_workdir = resolve_workdir(repo, pipeline.auth_workdir)
+                auth_wd_err = None
+            except Exception as e:
+                err = CmdResult(cmd=f"resolve_workdir {pipeline.auth_workdir}", rc=2, stdout="", stderr=str(e), timed_out=False)
+                write_cmd_artifacts(artifacts_dir, "auth_workdir_error", err)
+                auth_workdir = repo
+                auth_wd_err = StageResult(ok=False, results=[err], failed_index=0)
             if auth_wd_err is not None:
                 failed_stage = "auth"
                 return VerificationResult(
@@ -422,7 +400,15 @@ def run_pipeline_verification(
                 )
 
         tests_env = safe_env(env_base, pipeline.tests_env if pipeline else {}, unattended=unattended)
-        tests_workdir, tests_wd_err = _workdir_or_fail("tests", pipeline.tests_workdir if pipeline else None)
+        raw_tests_workdir = pipeline.tests_workdir if pipeline else None
+        try:
+            tests_workdir = resolve_workdir(repo, raw_tests_workdir)
+            tests_wd_err = None
+        except Exception as e:
+            err = CmdResult(cmd=f"resolve_workdir {raw_tests_workdir}", rc=2, stdout="", stderr=str(e), timed_out=False)
+            write_cmd_artifacts(artifacts_dir, "tests_workdir_error", err)
+            tests_workdir = repo
+            tests_wd_err = StageResult(ok=False, results=[err], failed_index=0)
         if tests_wd_err is not None:
             failed_stage = "tests"
             return VerificationResult(
@@ -459,7 +445,14 @@ def run_pipeline_verification(
 
         if pipeline and pipeline.deploy_setup_cmds:
             deploy_env = safe_env(env_base, pipeline.deploy_env, unattended=unattended)
-            deploy_workdir, deploy_wd_err = _workdir_or_fail("deploy_setup", pipeline.deploy_workdir)
+            try:
+                deploy_workdir = resolve_workdir(repo, pipeline.deploy_workdir)
+                deploy_wd_err = None
+            except Exception as e:
+                err = CmdResult(cmd=f"resolve_workdir {pipeline.deploy_workdir}", rc=2, stdout="", stderr=str(e), timed_out=False)
+                write_cmd_artifacts(artifacts_dir, "deploy_setup_workdir_error", err)
+                deploy_workdir = repo
+                deploy_wd_err = StageResult(ok=False, results=[err], failed_index=0)
             if deploy_wd_err is not None:
                 failed_stage = "deploy_setup"
                 return VerificationResult(
@@ -497,7 +490,14 @@ def run_pipeline_verification(
 
         if pipeline and pipeline.deploy_health_cmds:
             deploy_env = safe_env(env_base, pipeline.deploy_env, unattended=unattended)
-            deploy_workdir, deploy_wd_err = _workdir_or_fail("deploy_health", pipeline.deploy_workdir)
+            try:
+                deploy_workdir = resolve_workdir(repo, pipeline.deploy_workdir)
+                deploy_wd_err = None
+            except Exception as e:
+                err = CmdResult(cmd=f"resolve_workdir {pipeline.deploy_workdir}", rc=2, stdout="", stderr=str(e), timed_out=False)
+                write_cmd_artifacts(artifacts_dir, "deploy_health_workdir_error", err)
+                deploy_workdir = repo
+                deploy_wd_err = StageResult(ok=False, results=[err], failed_index=0)
             if deploy_wd_err is not None:
                 failed_stage = "deploy_health"
                 return VerificationResult(
@@ -537,7 +537,14 @@ def run_pipeline_verification(
 
         if pipeline and pipeline.rollout_run_cmds:
             rollout_env = safe_env(env_base, pipeline.rollout_env, unattended=unattended)
-            rollout_workdir, rollout_wd_err = _workdir_or_fail("rollout", pipeline.rollout_workdir)
+            try:
+                rollout_workdir = resolve_workdir(repo, pipeline.rollout_workdir)
+                rollout_wd_err = None
+            except Exception as e:
+                err = CmdResult(cmd=f"resolve_workdir {pipeline.rollout_workdir}", rc=2, stdout="", stderr=str(e), timed_out=False)
+                write_cmd_artifacts(artifacts_dir, "rollout_workdir_error", err)
+                rollout_workdir = repo
+                rollout_wd_err = StageResult(ok=False, results=[err], failed_index=0)
             if rollout_wd_err is not None:
                 failed_stage = "rollout"
                 return VerificationResult(
@@ -579,7 +586,14 @@ def run_pipeline_verification(
 
         if pipeline and pipeline.evaluation_run_cmds:
             eval_env = safe_env(env_base, pipeline.evaluation_env, unattended=unattended)
-            eval_workdir, eval_wd_err = _workdir_or_fail("evaluation", pipeline.evaluation_workdir)
+            try:
+                eval_workdir = resolve_workdir(repo, pipeline.evaluation_workdir)
+                eval_wd_err = None
+            except Exception as e:
+                err = CmdResult(cmd=f"resolve_workdir {pipeline.evaluation_workdir}", rc=2, stdout="", stderr=str(e), timed_out=False)
+                write_cmd_artifacts(artifacts_dir, "evaluation_workdir_error", err)
+                eval_workdir = repo
+                eval_wd_err = StageResult(ok=False, results=[err], failed_index=0)
             if eval_wd_err is not None:
                 failed_stage = "evaluation"
                 return VerificationResult(
@@ -823,7 +837,14 @@ def run_pipeline_verification(
 
         if pipeline and pipeline.benchmark_run_cmds:
             bench_env = safe_env(env_base, pipeline.benchmark_env, unattended=unattended)
-            bench_workdir, bench_wd_err = _workdir_or_fail("benchmark", pipeline.benchmark_workdir)
+            try:
+                bench_workdir = resolve_workdir(repo, pipeline.benchmark_workdir)
+                bench_wd_err = None
+            except Exception as e:
+                err = CmdResult(cmd=f"resolve_workdir {pipeline.benchmark_workdir}", rc=2, stdout="", stderr=str(e), timed_out=False)
+                write_cmd_artifacts(artifacts_dir, "benchmark_workdir_error", err)
+                bench_workdir = repo
+                bench_wd_err = StageResult(ok=False, results=[err], failed_index=0)
             if bench_wd_err is not None:
                 failed_stage = "benchmark"
                 return VerificationResult(
@@ -984,9 +1005,24 @@ def run_pipeline_verification(
                 include_logs=bool(pipeline and pipeline.kubectl_dump_include_logs),
             )
 
-        if pipeline and _teardown_allowed(ok):
+        do_teardown = False
+        if teardown_cmds and teardown_policy != "never":
+            if teardown_policy == "always":
+                do_teardown = True
+            elif teardown_policy == "on_success":
+                do_teardown = ok
+            elif teardown_policy == "on_failure":
+                do_teardown = not ok
+        if pipeline and do_teardown:
             deploy_env = safe_env(env_base, pipeline.deploy_env, unattended=unattended)
-            deploy_workdir, td_wd_err = _workdir_or_fail("deploy_teardown", pipeline.deploy_workdir)
+            try:
+                deploy_workdir = resolve_workdir(repo, pipeline.deploy_workdir)
+                td_wd_err = None
+            except Exception as e:
+                err = CmdResult(cmd=f"resolve_workdir {pipeline.deploy_workdir}", rc=2, stdout="", stderr=str(e), timed_out=False)
+                write_cmd_artifacts(artifacts_dir, "deploy_teardown_workdir_error", err)
+                deploy_workdir = repo
+                td_wd_err = StageResult(ok=False, results=[err], failed_index=0)
             if td_wd_err is not None:
                 write_text(artifacts_dir / "deploy_teardown_warning.txt", "skip teardown due to invalid workdir\n")
             else:

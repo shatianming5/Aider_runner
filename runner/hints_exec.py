@@ -31,21 +31,14 @@ def _replace_flag_value(cmd: str, *, flag: str, new_value: str) -> str:
         return cmd
     if not new_value:
         return cmd
-
-    def repl(m: re.Match[str]) -> str:
-        # 作用：内部符号：_replace_flag_value.repl
-        # 能否简略：是
-        # 原因：规模≈8 行；引用次数≈2（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
-        # 证据：位置=runner/hints_exec.py:74；类型=function；引用≈2；规模≈8行
-        if m.group("flag") != flag:
-            return m.group(0)
-        v = new_value
-        # Quote the value if it has whitespace.
-        if any(ch.isspace() for ch in v):
-            v = json.dumps(v)
-        return f"{flag} {v}"
-
-    return _FLAG_VALUE_RE.sub(repl, cmd)
+    v = new_value
+    # Quote the value if it has whitespace.
+    if any(ch.isspace() for ch in v):
+        v = json.dumps(v)
+    return _FLAG_VALUE_RE.sub(
+        lambda m: (m.group(0) if m.group("flag") != flag else f"{flag} {v}"),
+        cmd,
+    )
 
 
 _BRACKET_GROUP_RE = re.compile(r"\[([^\]]+)\]")
@@ -460,25 +453,26 @@ def _extract_score_from_json_obj(obj: object) -> tuple[float | None, str]:
     # 能否简略：部分
     # 原因：规模≈25 行；引用次数≈2（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
     # 证据：位置=runner/hints_exec.py:256；类型=function；引用≈2；规模≈25行
-
-    def rec(x: object) -> list[tuple[str, float]]:
-        # 作用：内部符号：_extract_score_from_json_obj.rec
-        # 能否简略：否
-        # 原因：规模≈12 行；引用次数≈4（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
-        # 证据：位置=runner/hints_exec.py:258；类型=function；引用≈4；规模≈12行
-        out: list[tuple[str, float]] = []
+    pairs: list[tuple[str, float]] = []
+    # Manual DFS that preserves the original recursive order:
+    # for each dict item (in order): emit numeric pair, then descend into the value.
+    _item = object()
+    stack: list[object] = [obj]
+    while stack:
+        x = stack.pop()
+        if isinstance(x, tuple) and len(x) == 3 and x[0] is _item:
+            _, k, v = x
+            kk = str(k or "").strip().lower()
+            if isinstance(v, (int, float)):
+                pairs.append((kk, float(v)))
+            stack.append(v)
+            continue
         if isinstance(x, dict):
-            for k, v in x.items():
-                kk = str(k or "").strip().lower()
-                if isinstance(v, (int, float)):
-                    out.append((kk, float(v)))
-                out.extend(rec(v))
+            for k, v in reversed(list(x.items())):
+                stack.append((_item, k, v))
         elif isinstance(x, list):
-            for it in x:
-                out.extend(rec(it))
-        return out
-
-    pairs = rec(obj)
+            for it in reversed(x):
+                stack.append(it)
     # Prefer pass@1, then accuracy, then score.
     for needle in ("pass@1", "pass_at_1", "pass@1+", "pass_at_1_plus", "accuracy", "score"):
         for k, v in reversed(pairs):
@@ -591,35 +585,31 @@ def normalize_hint_command(cmd: str, *, env: dict[str, str]) -> tuple[str, str |
         return "", "empty_after_sanitize"
 
     # Replace bracketed option groups like [a|b|c] -> a (first option).
-    def bracket_repl(m: re.Match[str]) -> str:
-        # 作用：内部符号：normalize_hint_command.bracket_repl
-        # 能否简略：是
-        # 原因：规模≈6 行；引用次数≈2（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
-        # 证据：位置=runner/hints_exec.py:360；类型=function；引用≈2；规模≈6行
-        inner = m.group(1)
-        if "|" in inner:
-            return inner.split("|", 1)[0].strip()
-        # Keep unresolved placeholders as-is; we'll skip later if still bracketed.
-        return m.group(0)
-
-    s2 = _BRACKET_GROUP_RE.sub(bracket_repl, s)
+    s2 = _BRACKET_GROUP_RE.sub(
+        lambda m: (
+            str(m.group(1) or "").split("|", 1)[0].strip()
+            if "|" in str(m.group(1) or "")
+            else m.group(0)
+        ),
+        s,
+    )
     # Remove angle placeholders like <TENSOR_PARALLEL_SIZE>
     s2 = _ANGLE_GROUP_RE.sub("", s2)
 
     # Replace common GitHub Actions expressions (e.g., matrix python versions) with local defaults.
     py_ver = f"{sys.version_info.major}.{sys.version_info.minor}"
-
-    def gha_repl(m: re.Match[str]) -> str:
-        # 作用：内部符号：normalize_hint_command.gha_repl
-        # 能否简略：是
-        # 原因：规模≈5 行；引用次数≈2（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
-        # 证据：位置=runner/hints_exec.py:374；类型=function；引用≈2；规模≈5行
-        inner = str(m.group(1) or "").strip().lower()
-        if "matrix.python-version" in inner or "matrix.python_version" in inner or "python-version" in inner:
-            return py_ver
-        return ""
-
-    s2 = _GHA_EXPR_RE.sub(gha_repl, s2)
+    s2 = _GHA_EXPR_RE.sub(
+        lambda m: (
+            py_ver
+            if (
+                "matrix.python-version" in (inner := str(m.group(1) or "").strip().lower())
+                or "matrix.python_version" in inner
+                or "python-version" in inner
+            )
+            else ""
+        ),
+        s2,
+    )
 
     # Replace model/base-url flags with env-provided values when available.
     model = (env.get("AIDER_LLM_MODEL") or env.get("OPENAI_MODEL") or "").strip()
@@ -686,168 +676,126 @@ def normalize_hint_command(cmd: str, *, env: dict[str, str]) -> tuple[str, str |
     s2 = "\n".join(rewritten).strip()
 
     py_is_path = ("/" in py) or py.startswith((".", "~"))
+    py_first = shlex.split(shlex.quote(py))[0]
+    rewritten_tools: list[str] = []
+    for raw in s2.splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        if py_is_path:
+            try:
+                parts = shlex.split(line, posix=True)
+            except Exception:
+                rewritten_tools.append(line)
+                continue
+            if not parts:
+                rewritten_tools.append(line)
+                continue
 
-    def _maybe_rewrite_python_tools(line: str) -> str:
-        """Best-effort: route python/pip/pytest invocations to the repo-provided interpreter.
-
-        This avoids accidentally picking up a global interpreter (e.g. Py3.13) when the
-        repo is bootstrapped with a specific venv under `.aider_fsm/`.
-        """
-        # 作用：内部符号：normalize_hint_command._maybe_rewrite_python_tools
-        # 能否简略：部分
-        # 原因：提升 hints 对“任意 python 脚本入口”的稳定性（不仅是 pytest）；但需要谨慎 shlex 解析与重建；规模≈57 行
-        # 证据：位置=runner/hints_exec.py；类型=function；引用≈1；规模≈57行
-        if not py_is_path:
-            return line
-        try:
-            parts = shlex.split(line, posix=True)
-        except Exception:
-            return line
-        if not parts:
-            return line
-
-        prefix: list[str] = []
-        i = 0
-        while i < len(parts) and _ENV_ASSIGN_RE.match(str(parts[i] or "").strip()):
-            prefix.append(str(parts[i] or ""))
-            i += 1
-        if i < len(parts) and str(parts[i] or "") == "env":
-            prefix.append("env")
-            i += 1
+            prefix: list[str] = []
+            i = 0
             while i < len(parts) and _ENV_ASSIGN_RE.match(str(parts[i] or "").strip()):
                 prefix.append(str(parts[i] or ""))
                 i += 1
-        if i >= len(parts):
-            return line
+            if i < len(parts) and str(parts[i] or "") == "env":
+                prefix.append("env")
+                i += 1
+                while i < len(parts) and _ENV_ASSIGN_RE.match(str(parts[i] or "").strip()):
+                    prefix.append(str(parts[i] or ""))
+                    i += 1
+            if i >= len(parts):
+                rewritten_tools.append(line)
+                continue
 
-        cmd0 = str(parts[i] or "")
-        rest = [str(x or "") for x in parts[i + 1 :]]
+            cmd0 = str(parts[i] or "")
+            rest = [str(x or "") for x in parts[i + 1 :]]
 
-        tok = cmd0.strip()
-        is_py = tok in ("python", "python3") or bool(re.fullmatch(r"python\\d+(?:\\.\\d+)?", tok))
-        is_pip = tok in ("pip", "pip3") or bool(re.fullmatch(r"pip\\d+(?:\\.\\d+)?", tok))
+            tok = cmd0.strip()
+            is_py = tok in ("python", "python3") or bool(re.fullmatch(r"python\\d+(?:\\.\\d+)?", tok))
+            is_pip = tok in ("pip", "pip3") or bool(re.fullmatch(r"pip\\d+(?:\\.\\d+)?", tok))
 
-        if cmd0 != py and is_py:
-            cmd0 = py
-        elif is_pip:
-            cmd0 = py
-            rest = ["-m", "pip"] + rest
-        elif cmd0 == "pytest":
-            cmd0 = py
-            rest = ["-m", "pytest"] + rest
+            if cmd0 != py and is_py:
+                cmd0 = py
+            elif is_pip:
+                cmd0 = py
+                rest = ["-m", "pip"] + rest
+            elif cmd0 == "pytest":
+                cmd0 = py
+                rest = ["-m", "pytest"] + rest
 
-        return " ".join(shlex.quote(x) for x in (prefix + [cmd0] + rest)).strip()
+            line = " ".join(shlex.quote(x) for x in (prefix + [cmd0] + rest)).strip()
+        rewritten_tools.append(line)
+    s2 = "\n".join(rewritten_tools).strip()
 
-    s2 = "\n".join([_maybe_rewrite_python_tools(line) for line in s2.splitlines() if line.strip()]).strip()
-
-    def _looks_like_fire_cli(line: str) -> bool:
-        """Heuristic: console-script entrypoints like `pkg.subcmd` are often python-fire CLIs."""
-        # 作用：Heuristic: console-script entrypoints like `pkg.subcmd` are often python-fire CLIs.
-        # 能否简略：部分
-        # 原因：规模≈26 行；引用次数≈2（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
-        # 证据：位置=runner/hints_exec.py:440；类型=function；引用≈2；规模≈26行
+    fire_aliases = {
+        "--base-url": "--base_url",
+        "--n-samples": "--n_samples",
+        "--id-range": "--id_range",
+        "--i-just-wanna-run": "--i_just_wanna_run",
+        "--test-details": "--test_details",
+        "--base-only": "--base_only",
+        "--output-file": "--output_file",
+        "--min-time-limit": "--min_time_limit",
+        "--gt-time-limit-factor": "--gt_time_limit_factor",
+    }
+    bounded: list[str] = []
+    for line in s2.splitlines():
+        # Heuristic: console-script entrypoints like `pkg.subcmd` are often python-fire CLIs.
+        looks_fire = False
         try:
             parts = shlex.split(line, posix=True)
         except Exception:
-            return False
-        if not parts:
-            return False
-        # Skip leading env assignments, e.g. `FOO=1 cmd ...`.
-        i = 0
-        while i < len(parts) and _ENV_ASSIGN_RE.match(str(parts[i] or "").strip()):
-            i += 1
-        if i >= len(parts):
-            return False
-        first = str(parts[i] or "").strip()
-        if not first:
-            return False
-        if _DOTTED_MODULE_RE.fullmatch(first):
-            return True
-        # Also accept `python -m pkg.mod ...`.
-        if first in ("python", "python3", shlex.split(shlex.quote(py))[0]):
-            if i + 2 < len(parts) and str(parts[i + 1]) == "-m":
-                mod = str(parts[i + 2] or "").strip()
-                if _DOTTED_MODULE_RE.fullmatch(mod):
-                    return True
-        return False
+            parts = []
+        if parts:
+            # Skip leading env assignments, e.g. `FOO=1 cmd ...`.
+            i = 0
+            while i < len(parts) and _ENV_ASSIGN_RE.match(str(parts[i] or "").strip()):
+                i += 1
+            if i < len(parts):
+                first = str(parts[i] or "").strip()
+                if first:
+                    if _DOTTED_MODULE_RE.fullmatch(first):
+                        looks_fire = True
+                    # Also accept `python -m pkg.mod ...`.
+                    elif first in ("python", "python3", py_first):
+                        if i + 2 < len(parts) and str(parts[i + 1]) == "-m":
+                            mod = str(parts[i + 2] or "").strip()
+                            if _DOTTED_MODULE_RE.fullmatch(mod):
+                                looks_fire = True
+        if looks_fire:
+            for old, new in fire_aliases.items():
+                line = line.replace(old, new)
 
-    def _maybe_normalize_fire_flag_aliases(line: str) -> str:
-        # 作用：内部符号：normalize_hint_command._maybe_normalize_fire_flag_aliases
-        # 能否简略：是
-        # 原因：规模≈18 行；引用次数≈2（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
-        # 证据：位置=runner/hints_exec.py:466；类型=function；引用≈2；规模≈18行
-        if not _looks_like_fire_cli(line):
-            return line
-        aliases = {
-            "--base-url": "--base_url",
-            "--n-samples": "--n_samples",
-            "--id-range": "--id_range",
-            "--i-just-wanna-run": "--i_just_wanna_run",
-            "--test-details": "--test_details",
-            "--base-only": "--base_only",
-            "--output-file": "--output_file",
-            "--min-time-limit": "--min_time_limit",
-            "--gt-time-limit-factor": "--gt_time_limit_factor",
-        }
-        out = line
-        for old, new in aliases.items():
-            out = out.replace(old, new)
-        return out
-
-    def _maybe_bound_openai_codegen_eval(line: str) -> str:
         # Best-effort: bound expensive "codegen + evaluate" hint commands using AIDER_EVAL_LIMIT.
-        #
-        # Generic heuristic: commands that include `--backend openai` + `--model` + `--dataset`
-        # and do NOT include `--samples` are likely to trigger large numbers of API calls.
-        # For python-fire style CLIs, `--n_samples 1` is commonly supported.
-        #
-        # NOTE: we intentionally do NOT inject `--id_range` here. Some evaluators use
-        # `--id_range` only for code generation while still expecting a full dataset
-        # during evaluation, which can cause hard failures (e.g., "Missing problems in samples").
-        # 作用：内部符号：normalize_hint_command._maybe_bound_openai_codegen_eval
-        # 能否简略：部分
-        # 原因：规模≈30 行；引用次数≈2（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
-        # 证据：位置=runner/hints_exec.py:494；类型=function；引用≈2；规模≈30行
         low = line.lower()
-        if "--samples" in low or " -s " in f" {low} ":
-            return line
-        if ("--backend openai" not in low) and ("--backend=openai" not in low):
-            return line
-        if "--model" not in low:
-            return line
-        if "--dataset" not in low:
-            return line
-        if (".evaluate" not in low) and (".codegen" not in low):
-            return line
+        if ("--samples" not in low) and (" -s " not in f" {low} "):
+            if ("--backend openai" in low) or ("--backend=openai" in low):
+                if ("--model" in low) and ("--dataset" in low) and ((".evaluate" in low) or (".codegen" in low)):
+                    parts2 = line.split()
+                    has_n_samples = any(p.startswith("--n_samples") for p in parts2)
+                    if not has_n_samples:
+                        line = (line + " --n_samples 1").strip()
 
-        parts = line.split()
-        has_n_samples = any(p.startswith("--n_samples") for p in parts)
-
-        suffix: list[str] = []
-        if not has_n_samples:
-            suffix.extend(["--n_samples", "1"])
-
-        return (line + (" " + " ".join(suffix) if suffix else "")).strip()
-
-    s2 = "\n".join([_maybe_bound_openai_codegen_eval(_maybe_normalize_fire_flag_aliases(line)) for line in s2.splitlines()])
+        bounded.append(line)
+    s2 = "\n".join(bounded)
 
     # Some repos recommend `pytest -n ...` (xdist), but the plugin is often missing in
     # minimal environments. Strip xdist-only flags by default to improve compatibility.
     strip_pytest_n = _is_truthy(env.get("AIDER_FSM_HINT_STRIP_PYTEST_N", "1"))
     if strip_pytest_n:
-        def _strip_pytest_xdist_flags(line: str) -> str:
-            # 作用：内部符号：normalize_hint_command._strip_pytest_xdist_flags
-            # 能否简略：是
-            # 原因：小型兼容性改写；避免 xdist 缺失导致 `pytest -n` 直接报错（runner 更通用）
-            # 证据：位置=runner/hints_exec.py；类型=function；引用≈1；规模≈40行
+        stripped: list[str] = []
+        for line in s2.splitlines():
             try:
                 parts = shlex.split(line, posix=True)
             except Exception:
-                return line
+                stripped.append(line)
+                continue
             if not parts:
-                return line
+                stripped.append(line)
+                continue
             if "pytest" not in parts:
-                return line
+                stripped.append(line)
+                continue
             out: list[str] = []
             i = 0
             while i < len(parts):
@@ -873,9 +821,8 @@ def normalize_hint_command(cmd: str, *, env: dict[str, str]) -> tuple[str, str |
                     continue
                 out.append(tok)
                 i += 1
-            return " ".join(shlex.quote(x) for x in out)
-
-        s2 = "\n".join([_strip_pytest_xdist_flags(line) for line in s2.splitlines()])
+            stripped.append(" ".join(shlex.quote(x) for x in out))
+        s2 = "\n".join(stripped)
 
     # If the command still contains bracket placeholders, it's likely not directly runnable.
     tmp = re.sub(r"\[\s*\d+\s*,\s*\d+\s*\]", "", s2)
@@ -1191,86 +1138,8 @@ def run_hints(
     uv_hint_env: dict[str, str] | None = None
     uv_hint_env_py: str = ""
 
-    def _ensure_uv_hint_env() -> tuple[dict[str, str] | None, str, str]:
-        # 作用：内部符号：run_hints._ensure_uv_hint_env
-        # 能否简略：否
-        # 原因：把“失败后切 uv venv（按候选 Python 版本）重试”的策略封装到一个点；避免写死 py311
-        # 证据：位置=runner/hints_exec.py；类型=function；引用≈1；规模≈95行
-        nonlocal uv_hint_env, uv_hint_env_py
-        if uv_hint_env is not None:
-            return uv_hint_env, "cached", uv_hint_env_py
-        if not auto_uv_venv:
-            return None, "disabled", ""
-        if shutil.which("uv") is None:
-            return None, "uv_not_found", ""
-        if not uv_py_candidates:
-            return None, "no_uv_python_candidates", ""
-
-        raw_venv_dir = str(env2.get("AIDER_FSM_HINT_UV_VENV_DIR") or "").strip()
-        uv_try = [uv_py_candidates[0]] if raw_venv_dir else list(uv_py_candidates)
-
-        last_err = ""
-        for py_req in uv_try:
-            try:
-                m = re.match(r"^\\s*(\\d+)\\.(\\d+)\\s*$", py_req)
-                tag = f"py{m.group(1)}{m.group(2)}" if m else "py"
-            except Exception:
-                tag = "py"
-
-            if raw_venv_dir:
-                venv_dir = Path(raw_venv_dir).expanduser()
-                if not venv_dir.is_absolute():
-                    venv_dir = (repo / venv_dir).resolve()
-            else:
-                venv_dir = (repo / ".aider_fsm" / f"venv_hints_{tag}").resolve()
-            py_bin = (venv_dir / "bin" / "python").absolute()
-            try:
-                venv_dir.parent.mkdir(parents=True, exist_ok=True)
-            except Exception:
-                pass
-            try:
-                res = subprocess.run(
-                    ["uv", "venv", "--allow-existing", "--seed", "pip", "--python", py_req, str(venv_dir)],
-                    check=False,
-                    capture_output=True,
-                    text=True,
-                    timeout=600,
-                    cwd=str(repo),
-                    env=env2,
-                )
-            except Exception as e:
-                last_err = f"uv_venv_failed:{e}"
-                continue
-            try:
-                rc_i = int(getattr(res, "returncode", 1))
-            except Exception:
-                rc_i = 1
-            if rc_i != 0:
-                tail = _tail(
-                    str(getattr(res, "stderr", "") or "") + "\n" + str(getattr(res, "stdout", "") or ""),
-                    2500,
-                )
-                last_err = f"uv_venv_failed_rc={getattr(res, 'returncode', None)}:{tail}"
-                continue
-
-            envx = dict(env2)
-            old_path = str(envx.get("PATH") or "")
-            envx["PATH"] = str((venv_dir / "bin").absolute()) + (os.pathsep + old_path if old_path else "")
-            envx["VIRTUAL_ENV"] = str(venv_dir.absolute())
-            envx["AIDER_FSM_PYTHON"] = str(py_bin)
-            envx["PYTHON"] = str(py_bin)
-            envx.setdefault("UV_PYTHON", str(py_req).strip())
-            uv_hint_env = envx
-            uv_hint_env_py = str(py_req).strip()
-            return uv_hint_env, "ok", uv_hint_env_py
-
-        return None, last_err or "uv_venv_failed", ""
-
-    def _priority(raw: str) -> int:
-        # 作用：内部符号：run_hints._priority
-        # 能否简略：部分
-        # 原因：规模≈34 行；引用次数≈3（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
-        # 证据：位置=runner/hints_exec.py:779；类型=function；引用≈3；规模≈34行
+    ranked_hints: list[tuple[int, str]] = []
+    for raw in raw_hints:
         s = str(raw or "").lower()
         p = 0
         # Prefer commands that actually *run* evaluations/tests over setup/build steps.
@@ -1303,9 +1172,8 @@ def run_hints(
             p -= 5
         if "ollama" in s:
             p -= 3
-        return p
-
-    raw_hints.sort(key=_priority, reverse=True)
+        ranked_hints.append((p, raw))
+    ranked_hints.sort(key=lambda t: t[0], reverse=True)
 
     attempts: list[HintAttempt] = []
     probes: list[HintProbe] = []
@@ -1317,205 +1185,12 @@ def run_hints(
     docker_status: tuple[bool, str] | None = None
     hint_work_root: Path | None = None
 
-    def _looks_like_openai_codegen_eval(cmd: str) -> bool:
-        # Heuristic: `.evaluate/.codegen` CLIs with `--backend openai` + `--model` + `--dataset`
-        # and without `--samples` are likely to generate outputs under a default relative root.
-        # 作用：内部符号：run_hints._looks_like_openai_codegen_eval
-        # 能否简略：是
-        # 原因：规模≈15 行；引用次数≈3（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
-        # 证据：位置=runner/hints_exec.py:828；类型=function；引用≈3；规模≈15行
-        low = _first_command_line(cmd).lower()
-        if not low:
-            return False
-        if "--samples" in low or " -s " in f" {low} ":
-            return False
-        if ("--backend openai" not in low) and ("--backend=openai" not in low):
-            return False
-        if "--model" not in low or "--dataset" not in low:
-            return False
-        if (".evaluate" not in low) and (".codegen" not in low):
-            return False
-        return True
-
-    def _maybe_prepare_dataset_override(cmd: str, *, workdir: Path, env: dict[str, str]) -> dict[str, str]:
-        """Best-effort: create a small dataset override file for smoke/full-lite runs.
-
-        Some evaluators read `HUMANEVAL_OVERRIDE_PATH` / `MBPP_OVERRIDE_PATH` to override
-        their dataset JSONL source. When `AIDER_EVAL_LIMIT` is set, we can generate an
-        override file with the first N tasks to bound runtime without depending on
-        evaluator-specific CLI flags.
-        """
-        # 作用：Best-effort: create a small dataset override file for smoke/full-lite runs.
-        # 能否简略：部分
-        # 原因：规模≈123 行；引用次数≈2（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
-        # 证据：位置=runner/hints_exec.py:865；类型=function；引用≈2；规模≈123行
-        try:
-            lim = int(str(env.get("AIDER_EVAL_LIMIT") or "").strip() or 0)
-        except Exception:
-            lim = 0
-        if lim <= 0:
-            return env
-
-        dataset = _extract_cli_flag_value(cmd, "--dataset").strip().lower()
-        if dataset not in ("humaneval", "mbpp"):
-            return env
-
-        override_var = "HUMANEVAL_OVERRIDE_PATH" if dataset == "humaneval" else "MBPP_OVERRIDE_PATH"
-        if str(env.get(override_var) or "").strip():
-            return env
-
-        # Identify the evaluator package from either:
-        # - `python -m pkg.mod ...` (module execution)
-        # - `pkg.mod ...` / `/path/to/pkg.mod ...` (console-script style)
-        line = _first_command_line(cmd)
-        if not line:
-            return env
-        try:
-            parts = shlex.split(line, posix=True)
-        except Exception:
-            return env
-        module = ""
-        if "-m" in parts:
-            try:
-                module = str(parts[parts.index("-m") + 1] or "").strip()
-            except Exception:
-                module = ""
-        if not module:
-            # Skip leading env assignments, e.g. `FOO=1 cmd ...`.
-            i = 0
-            while i < len(parts) and _ENV_ASSIGN_RE.match(str(parts[i] or "").strip()):
-                i += 1
-            if i < len(parts):
-                first = str(parts[i] or "").strip()
-                # Allow either `pkg.mod` or `/abs/path/pkg.mod`.
-                cand = os.path.basename(first)
-                if _DOTTED_MODULE_RE.fullmatch(cand):
-                    module = cand
-                elif _DOTTED_MODULE_RE.fullmatch(first):
-                    module = first
-        if not module or "." not in module:
-            return env
-        pkg = module.split(".", 1)[0].strip()
-        if not pkg:
-            return env
-
-        out_path = (Path(workdir) / f"{dataset}_override_{lim}.jsonl").resolve()
-        # If the file already exists, reuse it.
-        try:
-            if out_path.exists() and out_path.is_file() and out_path.stat().st_size > 0:
-                env2 = dict(env)
-                env2[override_var] = str(out_path)
-                return env2
-        except Exception:
-            pass
-
-        # Prefer the runner-provided python when available.
-        py_exec = str(env.get("AIDER_FSM_PYTHON") or env.get("PYTHON") or sys.executable).strip() or sys.executable
-        try:
-            p = Path(py_exec).expanduser()
-            if not p.is_absolute() and ("/" in py_exec or py_exec.startswith((".", "~"))):
-                cand = (repo / p).resolve()
-                if cand.exists():
-                    py_exec = str(cand)
-        except Exception:
-            pass
-
-        code = r"""
-import importlib
-import json
-import sys
-from pathlib import Path
-
-pkg = (sys.argv[1] if len(sys.argv) > 1 else "").strip()
-dataset = (sys.argv[2] if len(sys.argv) > 2 else "").strip().lower()
-out = Path(sys.argv[3] if len(sys.argv) > 3 else "").expanduser().resolve()
-limit = int(sys.argv[4] if len(sys.argv) > 4 else "0")
-if not pkg or not out or limit <= 0:
-    raise SystemExit(2)
-
-if dataset == "humaneval":
-    dm = importlib.import_module(pkg + ".data.humaneval")
-    src = dm._ready_human_eval_plus_path()
-elif dataset == "mbpp":
-    dm = importlib.import_module(pkg + ".data.mbpp")
-    src = dm._ready_mbpp_plus_path()
-else:
-    raise SystemExit(3)
-
-seen = set()
-out.parent.mkdir(parents=True, exist_ok=True)
-with open(src, "r", encoding="utf-8", errors="replace") as f, open(out, "w", encoding="utf-8") as g:
-    for line in f:
-        s = line.strip()
-        if not s:
-            continue
-        obj = json.loads(s)
-        tid = obj.get("task_id")
-        if not isinstance(tid, str) or not tid.strip():
-            continue
-        if tid in seen:
-            continue
-        seen.add(tid)
-        g.write(s + "\n")
-        if len(seen) >= limit:
-            break
-if len(seen) <= 0:
-    raise SystemExit(4)
-"""
-        try:
-            res = subprocess.run(
-                [py_exec, "-c", code, pkg, dataset, str(out_path), str(lim)],
-                check=False,
-                capture_output=True,
-                text=True,
-                timeout=60,
-                cwd=str(repo),
-                env=env,
-            )
-            if int(res.returncode) == 0 and out_path.exists():
-                env2 = dict(env)
-                env2[override_var] = str(out_path)
-                return env2
-        except Exception:
-            return env
-        return env
-
-    def _parse_pytest_counts(text: str) -> tuple[int, int, int] | None:
-        """Parse (passed, failed, errors) from pytest output (best-effort)."""
-        # 作用：Parse (passed, failed, errors) from pytest output (best-effort).
-        # 能否简略：部分
-        # 原因：规模≈24 行；引用次数≈3（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
-        # 证据：位置=runner/hints_exec.py:983；类型=function；引用≈3；规模≈24行
-        t = str(text or "")
-        # Strip ANSI color codes so regexes can match reliably.
-        t = re.sub(r"\x1b\[[0-9;]*m", "", t)
-        passed_ms = list(re.finditer(r"(?i)\b(\d+)\s+passed\b", t))
-        failed_ms = list(re.finditer(r"(?i)\b(\d+)\s+failed\b", t))
-        errors_ms = list(re.finditer(r"(?i)\b(\d+)\s+error(?:s)?\b", t))
-        try:
-            passed = int(passed_ms[-1].group(1)) if passed_ms else 0
-        except Exception:
-            passed = 0
-        try:
-            failed = int(failed_ms[-1].group(1)) if failed_ms else 0
-        except Exception:
-            failed = 0
-        try:
-            errors = int(errors_ms[-1].group(1)) if errors_ms else 0
-        except Exception:
-            errors = 0
-        total = passed + failed + errors
-        if total <= 0:
-            return None
-        return passed, failed, errors
-
     candidates: list[dict[str, Any]] = []
     probe_timeout = min(max(3, int(timeout_seconds)), 20)
     seen_sanitized: set[str] = set()
 
     # Phase 1: normalize + probe runnability without executing hinted workloads.
-    for raw in raw_hints:
-        priority = _priority(raw)
+    for priority, raw in ranked_hints:
         sanitized, skip_reason = normalize_hint_command(raw, env=env2)
         if skip_reason is not None:
             attempts.append(
@@ -1667,6 +1342,14 @@ if len(seen) <= 0:
         probe_reason = str(cand.get("probe_reason") or "")
         raw = str(cand.get("raw") or "")
         sanitized = str(cand.get("sanitized") or "")
+        first_low = _first_command_line(sanitized).lower()
+        looks_openai_codegen = False
+        if first_low:
+            if ("--samples" not in first_low) and (" -s " not in f" {first_low} "):
+                if ("--backend openai" in first_low) or ("--backend=openai" in first_low):
+                    if ("--model" in first_low) and ("--dataset" in first_low):
+                        if (".evaluate" in first_low) or (".codegen" in first_low):
+                            looks_openai_codegen = True
 
         if openai_auth_failed and _is_remote_openai_hint(sanitized):
             attempts.append(
@@ -1701,7 +1384,7 @@ if len(seen) <= 0:
         attempt_no = int(executed) + 1
         if artifacts_dir is None:
             workdir = repo
-        elif _DOCKER_LINE_RE.search(sanitized) or _looks_like_openai_codegen_eval(sanitized):
+        elif _DOCKER_LINE_RE.search(sanitized) or looks_openai_codegen:
             if hint_work_root is None:
                 hint_work_root = (artifacts_dir / "hints_workdir").resolve()
                 hint_work_root.mkdir(parents=True, exist_ok=True)
@@ -1722,33 +1405,6 @@ if len(seen) <= 0:
 
         t0 = time.monotonic()
         timed_out = False
-        def _exec(cmd: str, *, env: dict[str, str]) -> tuple[int, str, str, bool]:
-            # 作用：内部符号：run_hints._exec
-            # 能否简略：否
-            # 原因：集中处理超时/解码/返回码，保证每次 hint 执行的行为一致且可审计
-            # 证据：位置=runner/hints_exec.py；类型=function；引用≈2；规模≈25行
-            nonlocal timed_out
-            try:
-                bash_args = ["bash", "-lc", cmd] if login_shell else ["bash", "-c", cmd]
-                res = subprocess.run(
-                    bash_args,
-                    check=False,
-                    capture_output=True,
-                    text=True,
-                    timeout=float(timeout_seconds),
-                    cwd=str(workdir),
-                    env=env,
-                )
-                return int(res.returncode), (res.stdout or ""), (res.stderr or ""), False
-            except subprocess.TimeoutExpired as e:
-                timed_out = True
-                out = getattr(e, "stdout", "") or ""
-                err = getattr(e, "stderr", "") or ""
-                if isinstance(out, bytes):
-                    out = out.decode("utf-8", errors="replace")
-                if isinstance(err, bytes):
-                    err = err.decode("utf-8", errors="replace")
-                return 124, str(out), str(err), True
 
         # IMPORTANT: prefer a non-login shell by default so bootstrap PATH overrides
         # (e.g. `.aider_fsm/venv/bin:$PATH`) are preserved. Login shells frequently
@@ -1767,10 +1423,175 @@ if len(seen) <= 0:
             parts = [p for p in pp.split(os.pathsep) if p]
             if repo_s not in parts:
                 env3["PYTHONPATH"] = pp + (os.pathsep if pp else "") + repo_s
-        if workdir != repo and _looks_like_openai_codegen_eval(sanitized):
-            env3 = _maybe_prepare_dataset_override(sanitized, workdir=workdir, env=env3)
+        if workdir != repo and looks_openai_codegen:
+            # Best-effort: create a small dataset override file for smoke/full-lite runs.
+            try:
+                override_lim = int(str(env3.get("AIDER_EVAL_LIMIT") or "").strip() or 0)
+            except Exception:
+                override_lim = 0
+            if override_lim > 0:
+                override_dataset = _extract_cli_flag_value(sanitized, "--dataset").strip().lower()
+                if override_dataset in ("humaneval", "mbpp"):
+                    override_var = (
+                        "HUMANEVAL_OVERRIDE_PATH" if override_dataset == "humaneval" else "MBPP_OVERRIDE_PATH"
+                    )
+                    if not str(env3.get(override_var) or "").strip():
+                        # Identify the evaluator package from either:
+                        # - `python -m pkg.mod ...` (module execution)
+                        # - `pkg.mod ...` / `/path/to/pkg.mod ...` (console-script style)
+                        override_line = _first_command_line(sanitized)
+                        override_module = ""
+                        try:
+                            override_parts = shlex.split(override_line, posix=True) if override_line else []
+                        except Exception:
+                            override_parts = []
+                        if override_parts:
+                            if "-m" in override_parts:
+                                try:
+                                    override_module = str(override_parts[override_parts.index("-m") + 1] or "").strip()
+                                except Exception:
+                                    override_module = ""
+                            if not override_module:
+                                # Skip leading env assignments, e.g. `FOO=1 cmd ...`.
+                                j = 0
+                                while j < len(override_parts) and _ENV_ASSIGN_RE.match(str(override_parts[j] or "").strip()):
+                                    j += 1
+                                if j < len(override_parts):
+                                    override_first = str(override_parts[j] or "").strip()
+                                    # Allow either `pkg.mod` or `/abs/path/pkg.mod`.
+                                    override_mod_cand = os.path.basename(override_first)
+                                    if _DOTTED_MODULE_RE.fullmatch(override_mod_cand):
+                                        override_module = override_mod_cand
+                                    elif _DOTTED_MODULE_RE.fullmatch(override_first):
+                                        override_module = override_first
+                        if override_module and "." in override_module:
+                            override_pkg = override_module.split(".", 1)[0].strip()
+                            if override_pkg:
+                                override_out_path = (
+                                    (Path(workdir) / f"{override_dataset}_override_{override_lim}.jsonl").resolve()
+                                )
 
-        rc, out, err, this_timed_out = _exec(sanitized, env=env3)
+                                reuse_ok = False
+                                try:
+                                    reuse_ok = (
+                                        override_out_path.exists()
+                                        and override_out_path.is_file()
+                                        and override_out_path.stat().st_size > 0
+                                    )
+                                except Exception:
+                                    reuse_ok = False
+                                if reuse_ok:
+                                    env3 = dict(env3)
+                                    env3[override_var] = str(override_out_path)
+                                else:
+                                    # Prefer the runner-provided python when available.
+                                    override_py_exec = str(
+                                        env3.get("AIDER_FSM_PYTHON") or env3.get("PYTHON") or sys.executable
+                                    ).strip() or sys.executable
+                                    try:
+                                        p2 = Path(override_py_exec).expanduser()
+                                        if not p2.is_absolute() and (
+                                            "/" in override_py_exec or override_py_exec.startswith((".", "~"))
+                                        ):
+                                            py_exec_cand = (repo / p2).resolve()
+                                            if py_exec_cand.exists():
+                                                override_py_exec = str(py_exec_cand)
+                                    except Exception:
+                                        pass
+
+                                    override_code = r"""
+import importlib
+import json
+import sys
+from pathlib import Path
+
+pkg = (sys.argv[1] if len(sys.argv) > 1 else "").strip()
+dataset = (sys.argv[2] if len(sys.argv) > 2 else "").strip().lower()
+out = Path(sys.argv[3] if len(sys.argv) > 3 else "").expanduser().resolve()
+limit = int(sys.argv[4] if len(sys.argv) > 4 else "0")
+if not pkg or not out or limit <= 0:
+    raise SystemExit(2)
+
+if dataset == "humaneval":
+    dm = importlib.import_module(pkg + ".data.humaneval")
+    src = dm._ready_human_eval_plus_path()
+elif dataset == "mbpp":
+    dm = importlib.import_module(pkg + ".data.mbpp")
+    src = dm._ready_mbpp_plus_path()
+else:
+    raise SystemExit(3)
+
+seen = set()
+out.parent.mkdir(parents=True, exist_ok=True)
+with open(src, "r", encoding="utf-8", errors="replace") as f, open(out, "w", encoding="utf-8") as g:
+    for line in f:
+        s = line.strip()
+        if not s:
+            continue
+        obj = json.loads(s)
+        tid = obj.get("task_id")
+        if not isinstance(tid, str) or not tid.strip():
+            continue
+        if tid in seen:
+            continue
+        seen.add(tid)
+        g.write(s + "\n")
+        if len(seen) >= limit:
+            break
+if len(seen) <= 0:
+    raise SystemExit(4)
+"""
+                                    try:
+                                        res = subprocess.run(
+                                            [
+                                                override_py_exec,
+                                                "-c",
+                                                override_code,
+                                                override_pkg,
+                                                override_dataset,
+                                                str(override_out_path),
+                                                str(override_lim),
+                                            ],
+                                            check=False,
+                                            capture_output=True,
+                                            text=True,
+                                            timeout=60,
+                                            cwd=str(repo),
+                                            env=env3,
+                                        )
+                                        if int(res.returncode) == 0 and override_out_path.exists():
+                                            env3 = dict(env3)
+                                            env3[override_var] = str(override_out_path)
+                                    except Exception:
+                                        pass
+
+        try:
+            bash_args = ["bash", "-lc", sanitized] if login_shell else ["bash", "-c", sanitized]
+            res = subprocess.run(
+                bash_args,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=float(timeout_seconds),
+                cwd=str(workdir),
+                env=env3,
+            )
+            rc = int(res.returncode)
+            out = res.stdout or ""
+            err = res.stderr or ""
+            this_timed_out = False
+        except subprocess.TimeoutExpired as e:
+            timed_out = True
+            out_t = getattr(e, "stdout", "") or ""
+            err_t = getattr(e, "stderr", "") or ""
+            if isinstance(out_t, bytes):
+                out_t = out_t.decode("utf-8", errors="replace")
+            if isinstance(err_t, bytes):
+                err_t = err_t.decode("utf-8", errors="replace")
+            rc = 124
+            out = str(out_t)
+            err = str(err_t)
+            this_timed_out = True
 
         # If we see a Python/C-extension build failure (common on Py3.13), retry once
         # inside a uv-managed venv with a more compatible Python.
@@ -1793,9 +1614,108 @@ if len(seen) <= 0:
 
             if looks_incompat:
                 if sys.version_info >= (3, 13) or ("cp313" in tail_text) or ("python 3.13" in tail_text) or ("py3.13" in tail_text):
-                    env_uv, prep_reason, prep_py = _ensure_uv_hint_env()
+                    env_uv: dict[str, str] | None = None
+                    prep_reason = ""
+                    prep_py = ""
+                    if uv_hint_env is not None:
+                        env_uv = uv_hint_env
+                        prep_reason = "cached"
+                        prep_py = uv_hint_env_py
+                    elif not auto_uv_venv:
+                        prep_reason = "disabled"
+                    elif shutil.which("uv") is None:
+                        prep_reason = "uv_not_found"
+                    elif not uv_py_candidates:
+                        prep_reason = "no_uv_python_candidates"
+                    else:
+                        raw_venv_dir = str(env2.get("AIDER_FSM_HINT_UV_VENV_DIR") or "").strip()
+                        uv_try = [uv_py_candidates[0]] if raw_venv_dir else list(uv_py_candidates)
+
+                        last_err = ""
+                        for py_req in uv_try:
+                            try:
+                                m = re.match(r"^\\s*(\\d+)\\.(\\d+)\\s*$", py_req)
+                                tag = f"py{m.group(1)}{m.group(2)}" if m else "py"
+                            except Exception:
+                                tag = "py"
+
+                            if raw_venv_dir:
+                                venv_dir = Path(raw_venv_dir).expanduser()
+                                if not venv_dir.is_absolute():
+                                    venv_dir = (repo / venv_dir).resolve()
+                            else:
+                                venv_dir = (repo / ".aider_fsm" / f"venv_hints_{tag}").resolve()
+                            py_bin = (venv_dir / "bin" / "python").absolute()
+                            try:
+                                venv_dir.parent.mkdir(parents=True, exist_ok=True)
+                            except Exception:
+                                pass
+                            try:
+                                uv_res = subprocess.run(
+                                    ["uv", "venv", "--allow-existing", "--seed", "pip", "--python", py_req, str(venv_dir)],
+                                    check=False,
+                                    capture_output=True,
+                                    text=True,
+                                    timeout=600,
+                                    cwd=str(repo),
+                                    env=env2,
+                                )
+                            except Exception as e:
+                                last_err = f"uv_venv_failed:{e}"
+                                continue
+                            try:
+                                rc_i = int(getattr(uv_res, "returncode", 1))
+                            except Exception:
+                                rc_i = 1
+                            if rc_i != 0:
+                                tail = _tail(
+                                    str(getattr(uv_res, "stderr", "") or "") + "\n" + str(getattr(uv_res, "stdout", "") or ""),
+                                    2500,
+                                )
+                                last_err = f"uv_venv_failed_rc={getattr(uv_res, 'returncode', None)}:{tail}"
+                                continue
+
+                            envx = dict(env2)
+                            old_path = str(envx.get("PATH") or "")
+                            envx["PATH"] = str((venv_dir / "bin").absolute()) + (os.pathsep + old_path if old_path else "")
+                            envx["VIRTUAL_ENV"] = str(venv_dir.absolute())
+                            envx["AIDER_FSM_PYTHON"] = str(py_bin)
+                            envx["PYTHON"] = str(py_bin)
+                            envx.setdefault("UV_PYTHON", str(py_req).strip())
+                            uv_hint_env = envx
+                            uv_hint_env_py = str(py_req).strip()
+                            env_uv = uv_hint_env
+                            prep_reason = "ok"
+                            prep_py = uv_hint_env_py
+                            break
+                        if env_uv is None:
+                            prep_reason = last_err or "uv_venv_failed"
                     if env_uv is not None:
-                        rc2, out2, err2, _ = _exec(sanitized, env=env_uv)
+                        try:
+                            bash_args = ["bash", "-lc", sanitized] if login_shell else ["bash", "-c", sanitized]
+                            res = subprocess.run(
+                                bash_args,
+                                check=False,
+                                capture_output=True,
+                                text=True,
+                                timeout=float(timeout_seconds),
+                                cwd=str(workdir),
+                                env=env_uv,
+                            )
+                            rc2 = int(res.returncode)
+                            out2 = res.stdout or ""
+                            err2 = res.stderr or ""
+                        except subprocess.TimeoutExpired as e:
+                            timed_out = True
+                            out_t = getattr(e, "stdout", "") or ""
+                            err_t = getattr(e, "stderr", "") or ""
+                            if isinstance(out_t, bytes):
+                                out_t = out_t.decode("utf-8", errors="replace")
+                            if isinstance(err_t, bytes):
+                                err_t = err_t.decode("utf-8", errors="replace")
+                            rc2 = 124
+                            out2 = str(out_t)
+                            err2 = str(err_t)
                         # Keep the retry result, but also surface that a retry happened.
                         out = out2
                         extra = f"{prep_reason}" + (f" python={prep_py}" if prep_py else "")
@@ -1827,7 +1747,28 @@ if len(seen) <= 0:
             # Pytest: use passed/total as a concrete score (even when rc==0).
             if "pytest" in low_cmd:
                 tail_text = _tail(out, 20000) + "\n" + _tail(err, 20000)
-                counts = _parse_pytest_counts(tail_text)
+                counts = None
+                t = str(tail_text or "")
+                # Strip ANSI color codes so regexes can match reliably.
+                t = re.sub(r"\x1b\[[0-9;]*m", "", t)
+                passed_ms = list(re.finditer(r"(?i)\b(\d+)\s+passed\b", t))
+                failed_ms = list(re.finditer(r"(?i)\b(\d+)\s+failed\b", t))
+                errors_ms = list(re.finditer(r"(?i)\b(\d+)\s+error(?:s)?\b", t))
+                try:
+                    passed = int(passed_ms[-1].group(1)) if passed_ms else 0
+                except Exception:
+                    passed = 0
+                try:
+                    failed = int(failed_ms[-1].group(1)) if failed_ms else 0
+                except Exception:
+                    failed = 0
+                try:
+                    errors = int(errors_ms[-1].group(1)) if errors_ms else 0
+                except Exception:
+                    errors = 0
+                total = passed + failed + errors
+                if total > 0:
+                    counts = (passed, failed, errors)
                 if counts is not None:
                     passed, failed, errors = counts
                     total = max(1, passed + failed + errors)
@@ -1886,7 +1827,28 @@ if len(seen) <= 0:
         # a "successful run" and derive score from the outputs.
         if "pytest" in low_cmd:
             tail_text = _tail(out, 20000) + "\n" + _tail(err, 20000)
-            counts = _parse_pytest_counts(tail_text)
+            counts = None
+            t = str(tail_text or "")
+            # Strip ANSI color codes so regexes can match reliably.
+            t = re.sub(r"\x1b\[[0-9;]*m", "", t)
+            passed_ms = list(re.finditer(r"(?i)\b(\d+)\s+passed\b", t))
+            failed_ms = list(re.finditer(r"(?i)\b(\d+)\s+failed\b", t))
+            errors_ms = list(re.finditer(r"(?i)\b(\d+)\s+error(?:s)?\b", t))
+            try:
+                passed = int(passed_ms[-1].group(1)) if passed_ms else 0
+            except Exception:
+                passed = 0
+            try:
+                failed = int(failed_ms[-1].group(1)) if failed_ms else 0
+            except Exception:
+                failed = 0
+            try:
+                errors = int(errors_ms[-1].group(1)) if errors_ms else 0
+            except Exception:
+                errors = 0
+            total = passed + failed + errors
+            if total > 0:
+                counts = (passed, failed, errors)
             if counts is not None:
                 passed, failed, errors = counts
                 total = max(1, passed + failed + errors)

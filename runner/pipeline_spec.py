@@ -157,79 +157,43 @@ def load_pipeline_spec(path: Path) -> PipelineSpec:
     if version != 1:
         raise ValueError(f"unsupported pipeline version: {version}")
 
-    def _as_mapping(value: Any, name: str) -> dict[str, Any]:
-        """中文说明：
-        - 含义：把 YAML 字段规整为 dict（mapping），便于后续强类型解析。
-        - 内容：允许 None → `{}`；否则要求是 dict，否则抛出带路径的 ValueError。
-        - 可简略：是（小工具函数；也可用重复的 if/raise 替代）。
-        """
-        # 作用：中文说明：
-        # 能否简略：否
-        # 原因：规模≈11 行；引用次数≈11（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
-        # 证据：位置=runner/pipeline_spec.py:153；类型=function；引用≈11；规模≈11行
-        if value is None:
-            return {}
-        if not isinstance(value, dict):
-            raise ValueError(f"pipeline.{name} must be a mapping")
-        return value
-
-    def _as_env(value: Any, name: str) -> dict[str, str]:
-        """中文说明：
-        - 含义：把某个 `*.env` 字段解析为 `dict[str, str]`。
-        - 内容：过滤空 key；把值统一转成字符串（None → `\"\"`）；类型不符时报错。
-        - 可简略：可能（重复较多，但集中处理能保证一致性与可测试性）。
-        """
-        # 作用：中文说明：
-        # 能否简略：否
-        # 原因：规模≈19 行；引用次数≈7（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
-        # 证据：位置=runner/pipeline_spec.py:165；类型=function；引用≈7；规模≈19行
-        if value is None:
-            return {}
-        if not isinstance(value, dict):
-            raise ValueError(f"pipeline.{name}.env must be a mapping")
-        out: dict[str, str] = {}
-        for k, v in value.items():
-            if k is None:
-                continue
-            ks = str(k).strip()
-            if not ks:
-                continue
-            out[ks] = "" if v is None else str(v)
-        return out
-
-    def _as_cmds(m: dict[str, Any], *, cmd_key: str, cmds_key: str) -> list[str]:
-        """中文说明：
-        - 含义：把 `cmd`/`cmds` 两种写法统一成 `list[str]`。
-        - 内容：优先读取 `cmds_key`（要求 list[str]）；否则读取 `cmd_key`（要求非空 str）；都缺失则返回空列表。
-        - 可简略：是（本质是兼容层；若未来只保留一种字段，可删除）。
-        """
-        # 作用：中文说明：
-        # 能否简略：否
-        # 原因：规模≈17 行；引用次数≈9（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
-        # 证据：位置=runner/pipeline_spec.py:185；类型=function；引用≈9；规模≈17行
-        if cmds_key in m and m.get(cmds_key) is not None:
-            v = m.get(cmds_key)
-            if not isinstance(v, list) or not all(isinstance(x, str) and x.strip() for x in v):
-                raise ValueError(f"pipeline field {cmds_key} must be a list of non-empty strings")
-            return [x.strip() for x in v if x.strip()]
-        v = m.get(cmd_key)
+    mappings: dict[str, dict[str, Any]] = {}
+    for key, name in (
+        ("tests", "tests"),
+        ("deploy", "deploy"),
+        ("rollout", "rollout"),
+        ("evaluation", "evaluation"),
+        ("benchmark", "benchmark"),
+        ("artifacts", "artifacts"),
+        ("tooling", "tooling"),
+        ("auth", "auth"),
+        ("security", "security"),
+    ):
+        v = data.get(key)
         if v is None:
-            return []
-        if not isinstance(v, str) or not v.strip():
-            raise ValueError(f"pipeline field {cmd_key} must be a non-empty string")
-        return [v.strip()]
+            mappings[key] = {}
+        elif not isinstance(v, dict):
+            raise ValueError(f"pipeline.{name} must be a mapping")
+        else:
+            mappings[key] = v
 
-    tests = _as_mapping(data.get("tests"), "tests")
-    deploy = _as_mapping(data.get("deploy"), "deploy")
-    rollout = _as_mapping(data.get("rollout"), "rollout")
-    evaluation = _as_mapping(data.get("evaluation"), "evaluation")
-    bench = _as_mapping(data.get("benchmark"), "benchmark")
-    artifacts = _as_mapping(data.get("artifacts"), "artifacts")
-    tooling = _as_mapping(data.get("tooling"), "tooling")
-    auth = _as_mapping(data.get("auth"), "auth")
-    security = _as_mapping(data.get("security"), "security")
+    tests = mappings["tests"]
+    deploy = mappings["deploy"]
+    rollout = mappings["rollout"]
+    evaluation = mappings["evaluation"]
+    bench = mappings["benchmark"]
+    artifacts = mappings["artifacts"]
+    tooling = mappings["tooling"]
+    auth = mappings["auth"]
+    security = mappings["security"]
 
-    kubectl_dump = _as_mapping(deploy.get("kubectl_dump"), "deploy.kubectl_dump")
+    v = deploy.get("kubectl_dump")
+    if v is None:
+        kubectl_dump: dict[str, Any] = {}
+    elif not isinstance(v, dict):
+        raise ValueError("pipeline.deploy.kubectl_dump must be a mapping")
+    else:
+        kubectl_dump = v
 
     eval_required_keys = evaluation.get("required_keys") or []
     if eval_required_keys is None:
@@ -265,8 +229,58 @@ def load_pipeline_spec(path: Path) -> PipelineSpec:
     if not isinstance(denylist, list) or not all(isinstance(x, str) for x in denylist):
         raise ValueError("pipeline.security.denylist must be a list of strings")
 
+    parsed_cmds: dict[str, list[str]] = {}
+    for out_name, m, cmd_key, cmds_key in (
+        ("auth_cmds", auth, "cmd", "cmds"),
+        ("tests_cmds", tests, "cmd", "cmds"),
+        ("deploy_setup_cmds", deploy, "setup_cmd", "setup_cmds"),
+        ("deploy_health_cmds", deploy, "health_cmd", "health_cmds"),
+        ("deploy_teardown_cmds", deploy, "teardown_cmd", "teardown_cmds"),
+        ("rollout_run_cmds", rollout, "run_cmd", "run_cmds"),
+        ("evaluation_run_cmds", evaluation, "run_cmd", "run_cmds"),
+        ("benchmark_run_cmds", bench, "run_cmd", "run_cmds"),
+    ):
+        if cmds_key in m and m.get(cmds_key) is not None:
+            vv = m.get(cmds_key)
+            if not isinstance(vv, list) or not all(isinstance(x, str) and x.strip() for x in vv):
+                raise ValueError(f"pipeline field {cmds_key} must be a list of non-empty strings")
+            parsed_cmds[out_name] = [x.strip() for x in vv if x.strip()]
+        else:
+            vv = m.get(cmd_key)
+            if vv is None:
+                parsed_cmds[out_name] = []
+            elif not isinstance(vv, str) or not vv.strip():
+                raise ValueError(f"pipeline field {cmd_key} must be a non-empty string")
+            else:
+                parsed_cmds[out_name] = [vv.strip()]
+
+    parsed_envs: dict[str, dict[str, str]] = {}
+    for stage_name, m in (
+        ("tests", tests),
+        ("deploy", deploy),
+        ("rollout", rollout),
+        ("evaluation", evaluation),
+        ("benchmark", bench),
+        ("auth", auth),
+    ):
+        vv = m.get("env")
+        if vv is None:
+            parsed_envs[stage_name] = {}
+        elif not isinstance(vv, dict):
+            raise ValueError(f"pipeline.{stage_name}.env must be a mapping")
+        else:
+            out: dict[str, str] = {}
+            for k, v in vv.items():
+                if k is None:
+                    continue
+                ks = str(k).strip()
+                if not ks:
+                    continue
+                out[ks] = "" if v is None else str(v)
+            parsed_envs[stage_name] = out
+
     # auth: accept cmds or steps as alias
-    auth_cmds = _as_cmds(auth, cmd_key="cmd", cmds_key="cmds")
+    auth_cmds = parsed_cmds["auth_cmds"]
     if not auth_cmds and auth.get("steps") is not None:
         steps = auth.get("steps")
         if not isinstance(steps, list) or not all(isinstance(x, str) and x.strip() for x in steps):
@@ -275,17 +289,17 @@ def load_pipeline_spec(path: Path) -> PipelineSpec:
 
     return PipelineSpec(
         version=version,
-        tests_cmds=_as_cmds(tests, cmd_key="cmd", cmds_key="cmds"),
+        tests_cmds=parsed_cmds["tests_cmds"],
         tests_timeout_seconds=(int(tests.get("timeout_seconds")) if tests.get("timeout_seconds") else None),
         tests_retries=int(tests.get("retries") or 0),
-        tests_env=_as_env(tests.get("env"), "tests"),
+        tests_env=parsed_envs["tests"],
         tests_workdir=(str(tests.get("workdir")).strip() if tests.get("workdir") else None),
-        deploy_setup_cmds=_as_cmds(deploy, cmd_key="setup_cmd", cmds_key="setup_cmds"),
-        deploy_health_cmds=_as_cmds(deploy, cmd_key="health_cmd", cmds_key="health_cmds"),
-        deploy_teardown_cmds=_as_cmds(deploy, cmd_key="teardown_cmd", cmds_key="teardown_cmds"),
+        deploy_setup_cmds=parsed_cmds["deploy_setup_cmds"],
+        deploy_health_cmds=parsed_cmds["deploy_health_cmds"],
+        deploy_teardown_cmds=parsed_cmds["deploy_teardown_cmds"],
         deploy_timeout_seconds=(int(deploy.get("timeout_seconds")) if deploy.get("timeout_seconds") else None),
         deploy_retries=int(deploy.get("retries") or 0),
-        deploy_env=_as_env(deploy.get("env"), "deploy"),
+        deploy_env=parsed_envs["deploy"],
         deploy_workdir=(str(deploy.get("workdir")).strip() if deploy.get("workdir") else None),
         deploy_teardown_policy=teardown_policy,
         kubectl_dump_enabled=bool(kubectl_dump.get("enabled") or False),
@@ -294,33 +308,33 @@ def load_pipeline_spec(path: Path) -> PipelineSpec:
             str(kubectl_dump.get("label_selector")).strip() if kubectl_dump.get("label_selector") else None
         ),
         kubectl_dump_include_logs=bool(kubectl_dump.get("include_logs") or False),
-        rollout_run_cmds=_as_cmds(rollout, cmd_key="run_cmd", cmds_key="run_cmds"),
+        rollout_run_cmds=parsed_cmds["rollout_run_cmds"],
         rollout_timeout_seconds=(int(rollout.get("timeout_seconds")) if rollout.get("timeout_seconds") else None),
         rollout_retries=int(rollout.get("retries") or 0),
-        rollout_env=_as_env(rollout.get("env"), "rollout"),
+        rollout_env=parsed_envs["rollout"],
         rollout_workdir=(str(rollout.get("workdir")).strip() if rollout.get("workdir") else None),
-        evaluation_run_cmds=_as_cmds(evaluation, cmd_key="run_cmd", cmds_key="run_cmds"),
+        evaluation_run_cmds=parsed_cmds["evaluation_run_cmds"],
         evaluation_timeout_seconds=(
             int(evaluation.get("timeout_seconds")) if evaluation.get("timeout_seconds") else None
         ),
         evaluation_retries=int(evaluation.get("retries") or 0),
-        evaluation_env=_as_env(evaluation.get("env"), "evaluation"),
+        evaluation_env=parsed_envs["evaluation"],
         evaluation_workdir=(str(evaluation.get("workdir")).strip() if evaluation.get("workdir") else None),
         evaluation_metrics_path=(
             str(evaluation.get("metrics_path")).strip() if evaluation.get("metrics_path") else None
         ),
         evaluation_required_keys=[str(k).strip() for k in eval_required_keys if str(k).strip()],
-        benchmark_run_cmds=_as_cmds(bench, cmd_key="run_cmd", cmds_key="run_cmds"),
+        benchmark_run_cmds=parsed_cmds["benchmark_run_cmds"],
         benchmark_timeout_seconds=(int(bench.get("timeout_seconds")) if bench.get("timeout_seconds") else None),
         benchmark_retries=int(bench.get("retries") or 0),
-        benchmark_env=_as_env(bench.get("env"), "benchmark"),
+        benchmark_env=parsed_envs["benchmark"],
         benchmark_workdir=(str(bench.get("workdir")).strip() if bench.get("workdir") else None),
         benchmark_metrics_path=(str(bench.get("metrics_path")).strip() if bench.get("metrics_path") else None),
         benchmark_required_keys=[str(k).strip() for k in required_keys if str(k).strip()],
         auth_cmds=auth_cmds,
         auth_timeout_seconds=(int(auth.get("timeout_seconds")) if auth.get("timeout_seconds") else None),
         auth_retries=int(auth.get("retries") or 0),
-        auth_env=_as_env(auth.get("env"), "auth"),
+        auth_env=parsed_envs["auth"],
         auth_workdir=(str(auth.get("workdir")).strip() if auth.get("workdir") else None),
         auth_interactive=bool(auth.get("interactive") or False),
         artifacts_out_dir=(str(artifacts.get("out_dir")).strip() if artifacts.get("out_dir") else None),

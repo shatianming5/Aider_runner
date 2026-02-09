@@ -299,29 +299,6 @@ def open_env(
             max_scaffold_attempts = max(1, min(10, int(max_scaffold_attempts)))
             last_failure_reason = ""
 
-            def _write_scaffold_provenance() -> None:
-                # 作用：内部符号：open_env._write_scaffold_provenance
-                # 能否简略：部分
-                # 原因：规模≈18 行；引用次数≈5（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
-                # 证据：位置=runner/env_local.py:267；类型=function；引用≈5；规模≈18行
-                nonlocal provenance_written
-                if provenance_written:
-                    return
-                try:
-                    report = build_contract_provenance_report(
-                        repo=repo_root,
-                        purpose="scaffold_contract",
-                        strict_opencode=(not bool(seed_stage_skeleton) and not bool(write_fallback_pipeline_yml)),
-                        before=contract_before,
-                        after=snapshot_contract_files(repo_root),
-                        tool_trace=tool_trace,
-                        runner_written_paths=runner_written_paths,
-                    )
-                    dump_provenance(out_dir / "scaffold_provenance.json", report)
-                    provenance_written = True
-                except Exception:
-                    pass
-
             try:
                 if agent is None:
                     created_agent = True
@@ -459,7 +436,21 @@ def open_env(
 
                 if not pipeline_ok:
                     root_cause = _classify_opencode_transport_error(scaffold_err)
-                    _write_scaffold_provenance()
+                    if not provenance_written:
+                        try:
+                            report = build_contract_provenance_report(
+                                repo=repo_root,
+                                purpose="scaffold_contract",
+                                strict_opencode=(not bool(seed_stage_skeleton) and not bool(write_fallback_pipeline_yml)),
+                                before=contract_before,
+                                after=snapshot_contract_files(repo_root),
+                                tool_trace=tool_trace,
+                                runner_written_paths=runner_written_paths,
+                            )
+                            dump_provenance(out_dir / "scaffold_provenance.json", report)
+                            provenance_written = True
+                        except Exception:
+                            pass
                     write_text(
                         out_dir / "scaffold_error.txt",
                         "scaffold_contract_failed: missing_or_invalid_pipeline_yml\n"
@@ -484,7 +475,21 @@ def open_env(
             try:
                 parsed = load_pipeline_spec(pipeline_path)
             except Exception:
-                _write_scaffold_provenance()
+                if not provenance_written:
+                    try:
+                        report = build_contract_provenance_report(
+                            repo=repo_root,
+                            purpose="scaffold_contract",
+                            strict_opencode=(not bool(seed_stage_skeleton) and not bool(write_fallback_pipeline_yml)),
+                            before=contract_before,
+                            after=snapshot_contract_files(repo_root),
+                            tool_trace=tool_trace,
+                            runner_written_paths=runner_written_paths,
+                        )
+                        dump_provenance(out_dir / "scaffold_provenance.json", report)
+                        provenance_written = True
+                    except Exception:
+                        pass
                 raise
             report = validate_scaffold_contract(
                 repo_root,
@@ -492,7 +497,21 @@ def open_env(
                 require_metrics=bool(scaffold_require_metrics),
             )
             if report.errors:
-                _write_scaffold_provenance()
+                if not provenance_written:
+                    try:
+                        report2 = build_contract_provenance_report(
+                            repo=repo_root,
+                            purpose="scaffold_contract",
+                            strict_opencode=(not bool(seed_stage_skeleton) and not bool(write_fallback_pipeline_yml)),
+                            before=contract_before,
+                            after=snapshot_contract_files(repo_root),
+                            tool_trace=tool_trace,
+                            runner_written_paths=runner_written_paths,
+                        )
+                        dump_provenance(out_dir / "scaffold_provenance.json", report2)
+                        provenance_written = True
+                    except Exception:
+                        pass
                 write_text(
                     out_dir / "scaffold_error.txt",
                     "scaffold_contract_failed: incomplete_contract\n"
@@ -515,7 +534,21 @@ def open_env(
                     out_dir / "scaffold_validation_warning.txt",
                     "\n".join([f"- {x}" for x in report.warnings]) + "\n",
                 )
-            _write_scaffold_provenance()
+            if not provenance_written:
+                try:
+                    report3 = build_contract_provenance_report(
+                        repo=repo_root,
+                        purpose="scaffold_contract",
+                        strict_opencode=(not bool(seed_stage_skeleton) and not bool(write_fallback_pipeline_yml)),
+                        before=contract_before,
+                        after=snapshot_contract_files(repo_root),
+                        tool_trace=tool_trace,
+                        runner_written_paths=runner_written_paths,
+                    )
+                    dump_provenance(out_dir / "scaffold_provenance.json", report3)
+                    provenance_written = True
+                except Exception:
+                    pass
         elif require_pipeline:
             raise FileNotFoundError(f"pipeline not found: {pipeline_path}")
         else:
