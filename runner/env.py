@@ -34,119 +34,6 @@ from .env_local import (
 __all__ = ["EnvSession", "setup"]
 
 
-def _resolve_path(p: str | Path) -> Path:
-    # 作用：内部符号：_resolve_path
-    # 能否简略：部分
-    # 原因：规模≈2 行；引用次数≈4（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
-    # 证据：位置=runner/env.py:41；类型=function；引用≈4；规模≈2行
-    return Path(str(p)).expanduser().resolve()
-
-
-def _resolve_llm(llm: str | Path) -> tuple[str, Path | None, str | None]:
-    """Resolve an LLM reference to either a local model dir or a remote model id.
-
-    - Local: an existing directory path (Path or str).
-    - Remote: any other non-empty string (passed through as-is).
-    """
-    # 作用：Resolve an LLM reference to either a local model dir or a remote model id.
-    # 能否简略：部分
-    # 原因：规模≈34 行；引用次数≈2（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
-    # 证据：位置=runner/env.py:50；类型=function；引用≈2；规模≈34行
-    if isinstance(llm, Path):
-        p = llm.expanduser().resolve()
-        if not p.exists():
-            raise FileNotFoundError(f"llm_path_not_found: {p}")
-        if not p.is_dir():
-            raise NotADirectoryError(f"llm_not_directory: {p}")
-        return "local_hf", p, None
-
-    s = str(llm or "").strip()
-    if not s:
-        raise ValueError("empty_llm")
-
-    # Treat explicit path-like strings as local paths (error if missing).
-    if s.startswith(("/", "./", "../", "~")):
-        p = Path(s).expanduser().resolve()
-        if not p.exists():
-            raise FileNotFoundError(f"llm_path_not_found: {p}")
-        if not p.is_dir():
-            raise NotADirectoryError(f"llm_not_directory: {p}")
-        return "local_hf", p, None
-
-    # If it exists as a relative directory, treat it as local.
-    p2 = Path(s)
-    if p2.exists() and p2.is_dir():
-        return "local_hf", p2.expanduser().resolve(), None
-
-    # Otherwise: remote model id/name, passed through.
-    return "remote", None, s
-
-
-def _resolve_run_root(repo: Path, *, run_id: str, artifacts_dir: Path | None) -> Path:
-    # 作用：内部符号：_resolve_run_root
-    # 能否简略：部分
-    # 原因：规模≈7 行；引用次数≈4（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
-    # 证据：位置=runner/env.py:81；类型=function；引用≈4；规模≈7行
-    if artifacts_dir is not None:
-        out = _resolve_path(artifacts_dir)
-    else:
-        out = (repo / ".aider_fsm" / "artifacts" / run_id / "env_api").resolve()
-    out.mkdir(parents=True, exist_ok=True)
-    return out
-
-
-def _inject_openai_base_compat(overrides: dict[str, str]) -> None:
-    """Keep OpenAI-compatible base URL aliases in sync for downstream tools.
-
-    Some downstream libraries read `OPENAI_BASE_URL`, while others read
-    `OPENAI_API_BASE`. We normalize to include both keys when either is present
-    in env overrides or inherited process env.
-    """
-    # 作用：Keep OpenAI-compatible base URL aliases in sync for downstream tools.
-    # 能否简略：是
-    # 原因：规模≈18 行；引用次数≈2（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
-    # 证据：位置=runner/env.py:113；类型=function；引用≈2；规模≈18行
-    base = (
-        str(overrides.get("OPENAI_BASE_URL") or "").strip()
-        or str(overrides.get("OPENAI_API_BASE") or "").strip()
-        or str(os.environ.get("OPENAI_BASE_URL") or "").strip()
-        or str(os.environ.get("OPENAI_API_BASE") or "").strip()
-    )
-    if not base:
-        return
-    base = _ensure_openai_v1_base(base)
-    overrides.setdefault("OPENAI_BASE_URL", base)
-    overrides.setdefault("OPENAI_API_BASE", base)
-
-
-def _runtime_openai_config(runtime_env_path: Path) -> tuple[str | None, str | None]:
-    """Best-effort: derive (OPENAI_API_BASE, OPENAI_MODEL) from runtime_env.json."""
-    # 作用：Best-effort: derive (OPENAI_API_BASE, OPENAI_MODEL) from runtime_env.json.
-    # 能否简略：部分
-    # 原因：规模≈22 行；引用次数≈2（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
-    # 证据：位置=runner/env.py:128；类型=function；引用≈2；规模≈22行
-    p = Path(runtime_env_path).expanduser().resolve()
-    obj = _read_json_object(p)
-    if obj is None:
-        return None, None
-
-    base = ""
-    model = ""
-
-    inf = obj.get("inference")
-    if isinstance(inf, dict):
-        base = str(inf.get("openai_base_url") or inf.get("base_url") or "").strip()
-        model = str(inf.get("model") or "").strip()
-
-    if not base:
-        svc = obj.get("service")
-        if isinstance(svc, dict):
-            base = str(svc.get("base_url") or "").strip()
-
-    base_v1 = _ensure_openai_v1_base(base) if base else ""
-    return (base_v1 or None), (model or None)
-
-
 def _hf_parquet_qa_rows(repo_root: Path) -> int | None:
     """If repo_root is an HF snapshot with a QA test parquet, return its row count."""
     # 作用：If repo_root is an HF snapshot with a QA test parquet, return its row count.
@@ -421,118 +308,6 @@ class EnvSession:
     llm_model: str | None = None
     trained_model_dir: Path | None = None
 
-    def _audit_mode(self) -> str:
-        """中文说明：
-        - 含义：规范化审计开关（on/off/warn-only）。
-        - 内容：用于控制 evaluation 阶段的脚本审计强度：`on` 表示审计失败会视为失败，`warn-only` 表示只记录告警，`off` 表示跳过审计。
-        - 可简略：部分
-        - 原因：逻辑很短可以内联，但把默认值与允许取值集中在一处能避免调用点重复判断与默认值漂移。
-        """
-        # 作用：内部符号：EnvSession._audit_mode
-        # 能否简略：部分
-        # 原因：规模≈5 行；引用次数≈4（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
-        # 证据：位置=runner/env.py:445；类型=method；引用≈4；规模≈5行
-        m = str(self.audit or "on").strip().lower() or "on"
-        if m not in ("on", "off", "warn-only"):
-            return "on"
-        return m
-
-    def _apply_llm_overrides(self, overrides: dict[str, str]) -> None:
-        """中文说明：
-        - 含义：把本次运行选定的 LLM 形态写入 env（形成稳定、可复现的“LLM 合同”）。
-        - 内容：`remote` 模式写入 `AIDER_LLM_KIND/AIDER_LLM_MODEL/OPENAI_MODEL`；`local_hf` 模式写入 `AIDER_TRAINED_MODEL_DIR`（并清理 remote 字段）。
-        - 可简略：部分
-        - 原因：实现不长但承担“把 LLM 选择固化为可审计 env 合同”的职责；完全内联会让不同 stage 更容易出现字段不一致。
-        """
-        # 作用：Force a consistent LLM contract into env vars (no hardcoded paths/endpoints).
-        # 能否简略：是
-        # 原因：规模≈20 行；引用次数≈2（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
-        # 证据：位置=runner/env.py:458；类型=method；引用≈2；规模≈20行
-        kind = str(self.llm_kind or "").strip() or "local_hf"
-        if kind == "remote":
-            if not self.llm_model:
-                raise ValueError("missing_llm: call deploy/rollout with llm=model_id first")
-            overrides["AIDER_LLM_KIND"] = "remote"
-            overrides["AIDER_LLM_MODEL"] = str(self.llm_model)
-            overrides.setdefault("OPENAI_MODEL", str(self.llm_model))
-            overrides.pop("AIDER_TRAINED_MODEL_DIR", None)
-            return
-
-        if self.trained_model_dir is None:
-            raise ValueError("missing_llm: call deploy/rollout with llm=model_dir first")
-        overrides["AIDER_LLM_KIND"] = "local_hf"
-        overrides["AIDER_TRAINED_MODEL_DIR"] = str(self.trained_model_dir)
-        model_id = str(self.trained_model_dir.name or "").strip()
-        if model_id:
-            overrides.setdefault("OPENAI_MODEL", model_id)
-        overrides.pop("AIDER_LLM_MODEL", None)
-
-    def _base_overrides(self, *, mode: str, extra: dict[str, str] | None) -> dict[str, str]:
-        """中文说明：
-        - 含义：构造本次 stage 运行的基础环境变量覆盖层（env_overrides）。
-        - 内容：注入 run_id / mode / hints（如有）/ runtime_env_path（如有）等通用字段，并做 OpenAI base URL 兼容注入。
-        - 可简略：部分
-        - 原因：这是集中“拼 env 合同字段”的位置；拆散会降低可追踪性并更容易导致不同入口的 env 语义不一致。
-        """
-        # 作用：内部符号：EnvSession._base_overrides
-        # 能否简略：部分
-        # 原因：规模≈27 行；引用次数≈3（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
-        # 证据：位置=runner/env.py:478；类型=method；引用≈3；规模≈27行
-        out = dict(extra or {})
-        _inject_openai_base_compat(out)
-        out.setdefault("AIDER_FSM_RUN_ID", str(self.run_id))
-        out.setdefault("AIDER_EVAL_MODE", str(mode or "smoke").strip() or "smoke")
-        if self.command_hints:
-            # When doc hints exist, require evaluation scripts to run at least one
-            # official/hinted command and record usage (see runner/pipeline_verify.py).
-            out.setdefault("AIDER_FSM_REQUIRE_HINTS", "1")
-            try:
-                out.setdefault("AIDER_FSM_HINTS_JSON", json.dumps(list(self.command_hints[:20]), ensure_ascii=False))
-            except Exception:
-                out.setdefault("AIDER_FSM_HINTS_JSON", "[]")
-            try:
-                out.setdefault("AIDER_FSM_HINT_ANCHORS_JSON", json.dumps(list(self.hint_anchors[:20]), ensure_ascii=False))
-            except Exception:
-                out.setdefault("AIDER_FSM_HINT_ANCHORS_JSON", "[]")
-        if self.llm_kind:
-            out.setdefault("AIDER_LLM_KIND", str(self.llm_kind))
-        if self.llm_kind == "remote" and self.llm_model:
-            out.setdefault("AIDER_LLM_MODEL", str(self.llm_model))
-            out.setdefault("OPENAI_MODEL", str(self.llm_model))
-        if self.trained_model_dir is not None:
-            out.setdefault("AIDER_TRAINED_MODEL_DIR", str(self.trained_model_dir))
-        if self.runtime_env_path is not None:
-            out.update(with_runtime_env_path(self.runtime_env_path))
-        return out
-
-    def _apply_runtime_env_inference_overrides(self, overrides: dict[str, str]) -> None:
-        """中文说明：
-        - 含义：根据 `.aider_fsm/runtime_env.json` 推断并补齐推理端所需的 OpenAI 兼容配置。
-        - 内容：优先使用 runtime_env.json 提供的 base_url/model；对 local_hf 模式设置默认 OPENAI_API_KEY=local；避免被宿主环境里的旧配置污染。
-        - 可简略：部分
-        - 原因：逻辑不复杂，但它决定是否能自动复用 deploy 产出的推理端点/模型配置；随意内联或改动更容易引入环境污染问题。
-        """
-        # 作用：内部符号：EnvSession._apply_runtime_env_inference_overrides
-        # 能否简略：是
-        # 原因：规模≈17 行；引用次数≈3（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
-        # 证据：位置=runner/env.py:506；类型=method；引用≈3；规模≈17行
-        if self.runtime_env_path is None:
-            return
-        base, model = _runtime_openai_config(self.runtime_env_path)
-        if base:
-            explicit = any(
-                str(overrides.get(k) or "").strip() for k in ("OPENAI_API_BASE", "OPENAI_BASE_URL")
-            )
-            # For local_hf, runtime_env.json is the source of truth even if the base env is set (e.g. .env).
-            if self.llm_kind == "local_hf" or not explicit:
-                overrides["OPENAI_API_BASE"] = base
-                overrides["OPENAI_BASE_URL"] = base
-        if model:
-            overrides.setdefault("OPENAI_MODEL", model)
-            overrides.setdefault("AIDER_LLM_MODEL", model)
-        if self.llm_kind == "local_hf":
-            overrides.setdefault("OPENAI_API_KEY", str(overrides.get("OPENAI_API_KEY") or "local"))
-
     def rollout(
         self,
         llm: str | Path,
@@ -553,19 +328,103 @@ class EnvSession:
         # 能否简略：否
         # 原因：公共 API/关键编排点；规模≈117 行；引用次数≈3（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
         # 证据：位置=runner/env.py:544；类型=method；引用≈3；规模≈117行
-        kind, model_dir, model = _resolve_llm(llm)
-        self.llm_kind = kind
-        self.trained_model_dir = model_dir
-        self.llm_model = model
+        if isinstance(llm, Path):
+            p = llm.expanduser().resolve()
+            if not p.exists():
+                raise FileNotFoundError(f"llm_path_not_found: {p}")
+            if not p.is_dir():
+                raise NotADirectoryError(f"llm_not_directory: {p}")
+            self.llm_kind = "local_hf"
+            self.trained_model_dir = p
+            self.llm_model = None
+        else:
+            s = str(llm or "").strip()
+            if not s:
+                raise ValueError("empty_llm")
+            if s.startswith(("/", "./", "../", "~")):
+                p = Path(s).expanduser().resolve()
+                if not p.exists():
+                    raise FileNotFoundError(f"llm_path_not_found: {p}")
+                if not p.is_dir():
+                    raise NotADirectoryError(f"llm_not_directory: {p}")
+                self.llm_kind = "local_hf"
+                self.trained_model_dir = p
+                self.llm_model = None
+            else:
+                p2 = Path(s)
+                if p2.exists() and p2.is_dir():
+                    self.llm_kind = "local_hf"
+                    self.trained_model_dir = p2.expanduser().resolve()
+                    self.llm_model = None
+                else:
+                    self.llm_kind = "remote"
+                    self.trained_model_dir = None
+                    self.llm_model = s
 
-        run_root = _resolve_run_root(self.env.repo, run_id=self.run_id, artifacts_dir=artifacts_dir)
+        if artifacts_dir is not None:
+            run_root = Path(str(artifacts_dir)).expanduser().resolve()
+        else:
+            run_root = (self.env.repo / ".aider_fsm" / "artifacts" / str(self.run_id) / "env_api").resolve()
+        run_root.mkdir(parents=True, exist_ok=True)
 
         for attempt in range(int(max(0, repair_iters)) + 1):
             deploy_dir = (run_root / f"deploy_attempt_{attempt+1:02d}").resolve()
             rollout_dir = (run_root / f"rollout_attempt_{attempt+1:02d}").resolve()
             contract_err = ""
-            overrides = self._base_overrides(mode=mode, extra=env_overrides)
-            self._apply_llm_overrides(overrides)
+            overrides = dict(env_overrides or {})
+            base = (
+                str(overrides.get("OPENAI_BASE_URL") or "").strip()
+                or str(overrides.get("OPENAI_API_BASE") or "").strip()
+                or str(os.environ.get("OPENAI_BASE_URL") or "").strip()
+                or str(os.environ.get("OPENAI_API_BASE") or "").strip()
+            )
+            if base:
+                base = _ensure_openai_v1_base(base)
+                overrides.setdefault("OPENAI_BASE_URL", base)
+                overrides.setdefault("OPENAI_API_BASE", base)
+            overrides.setdefault("AIDER_FSM_RUN_ID", str(self.run_id))
+            overrides.setdefault("AIDER_EVAL_MODE", str(mode or "smoke").strip() or "smoke")
+            if self.command_hints:
+                # When doc hints exist, require evaluation scripts to run at least one
+                # official/hinted command and record usage (see runner/pipeline_verify.py).
+                overrides.setdefault("AIDER_FSM_REQUIRE_HINTS", "1")
+                try:
+                    overrides.setdefault("AIDER_FSM_HINTS_JSON", json.dumps(list(self.command_hints[:20]), ensure_ascii=False))
+                except Exception:
+                    overrides.setdefault("AIDER_FSM_HINTS_JSON", "[]")
+                try:
+                    overrides.setdefault(
+                        "AIDER_FSM_HINT_ANCHORS_JSON",
+                        json.dumps(list(self.hint_anchors[:20]), ensure_ascii=False),
+                    )
+                except Exception:
+                    overrides.setdefault("AIDER_FSM_HINT_ANCHORS_JSON", "[]")
+            if self.llm_kind:
+                overrides.setdefault("AIDER_LLM_KIND", str(self.llm_kind))
+            if self.llm_kind == "remote" and self.llm_model:
+                overrides.setdefault("AIDER_LLM_MODEL", str(self.llm_model))
+                overrides.setdefault("OPENAI_MODEL", str(self.llm_model))
+            if self.trained_model_dir is not None:
+                overrides.setdefault("AIDER_TRAINED_MODEL_DIR", str(self.trained_model_dir))
+            if self.runtime_env_path is not None:
+                overrides.update(with_runtime_env_path(self.runtime_env_path))
+            kind2 = str(self.llm_kind or "").strip() or "local_hf"
+            if kind2 == "remote":
+                if not self.llm_model:
+                    raise ValueError("missing_llm: call deploy/rollout with llm=model_id first")
+                overrides["AIDER_LLM_KIND"] = "remote"
+                overrides["AIDER_LLM_MODEL"] = str(self.llm_model)
+                overrides.setdefault("OPENAI_MODEL", str(self.llm_model))
+                overrides.pop("AIDER_TRAINED_MODEL_DIR", None)
+            else:
+                if self.trained_model_dir is None:
+                    raise ValueError("missing_llm: call deploy/rollout with llm=model_dir first")
+                overrides["AIDER_LLM_KIND"] = "local_hf"
+                overrides["AIDER_TRAINED_MODEL_DIR"] = str(self.trained_model_dir)
+                model_id = str(self.trained_model_dir.name or "").strip()
+                if model_id:
+                    overrides.setdefault("OPENAI_MODEL", model_id)
+                overrides.pop("AIDER_LLM_MODEL", None)
 
             deploy_res = _deploy(
                 self.env,
@@ -601,7 +460,36 @@ class EnvSession:
 
             self.runtime_env_path = deploy_res.runtime_env_path or (self.env.repo / ".aider_fsm" / "runtime_env.json").resolve()
             overrides.update(with_runtime_env_path(self.runtime_env_path))
-            self._apply_runtime_env_inference_overrides(overrides)
+            if self.runtime_env_path is not None:
+                p2 = Path(self.runtime_env_path).expanduser().resolve()
+                obj2 = _read_json_object(p2)
+                if obj2 is None:
+                    base2, model2 = None, None
+                else:
+                    base_raw = ""
+                    model_raw = ""
+                    inf = obj2.get("inference")
+                    if isinstance(inf, dict):
+                        base_raw = str(inf.get("openai_base_url") or inf.get("base_url") or "").strip()
+                        model_raw = str(inf.get("model") or "").strip()
+                    if not base_raw:
+                        svc = obj2.get("service")
+                        if isinstance(svc, dict):
+                            base_raw = str(svc.get("base_url") or "").strip()
+                    base_v1 = _ensure_openai_v1_base(base_raw) if base_raw else ""
+                    base2, model2 = (base_v1 or None), (model_raw or None)
+
+                if base2:
+                    explicit = any(str(overrides.get(k) or "").strip() for k in ("OPENAI_API_BASE", "OPENAI_BASE_URL"))
+                    # For local_hf, runtime_env.json is the source of truth even if the base env is set (e.g. .env).
+                    if self.llm_kind == "local_hf" or not explicit:
+                        overrides["OPENAI_API_BASE"] = base2
+                        overrides["OPENAI_BASE_URL"] = base2
+                if model2:
+                    overrides.setdefault("OPENAI_MODEL", model2)
+                    overrides.setdefault("AIDER_LLM_MODEL", model2)
+                if self.llm_kind == "local_hf":
+                    overrides.setdefault("OPENAI_API_KEY", str(overrides.get("OPENAI_API_KEY") or "local"))
 
             rollout_res = _rollout(
                 self.env,
@@ -672,211 +560,6 @@ class EnvSession:
 
         return rollout_res  # pragma: no cover
 
-    def _evaluation(
-        self,
-        *,
-        mode: str = "smoke",
-        env_overrides: dict[str, str] | None = None,
-        artifacts_dir: Path | None = None,
-        repair_iters: int = 3,
-    ) -> EvaluationCallResult:
-        """中文说明：
-        - 含义：内部实现：执行 evaluation（以及必要时的 deploy/rollout），并在失败时触发 repair 重试。
-        - 内容：优先走“复用 runtime_env 的快速路径”（仅跑 evaluation）；否则走完整 deploy -> rollout -> evaluation；可选进行脚本审计与 metrics 合同校验。
-        - 可简略：部分
-        - 原因：逻辑较长可拆分子步骤，但这里承载了“快速路径 vs 全流程”以及 repair 重试的编排语义，拆散过度会让行为边界更难维护。
-        """
-        # 作用：内部符号：EnvSession._evaluation
-        # 能否简略：部分
-        # 原因：规模≈164 行；引用次数≈1（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
-        # 证据：位置=runner/env.py:660；类型=method；引用≈1；规模≈164行
-        if not self.llm_kind:
-            raise ValueError("missing_llm: call deploy/rollout with llm=model_dir|model_id first")
-
-        run_root = _resolve_run_root(self.env.repo, run_id=self.run_id, artifacts_dir=artifacts_dir)
-
-        for attempt in range(int(max(0, repair_iters)) + 1):
-            deploy_dir = (run_root / f"deploy_attempt_{attempt+1:02d}").resolve()
-            roll_eval_dir = (run_root / f"rollout_evaluation_attempt_{attempt+1:02d}").resolve()
-            eval_dir = (run_root / f"evaluation_attempt_{attempt+1:02d}").resolve()
-
-            overrides = self._base_overrides(mode=mode, extra=env_overrides)
-            self._apply_llm_overrides(overrides)
-
-            combined = ""
-            if self.runtime_env_path is not None and attempt == 0:
-                # Fast path: reuse the existing deploy and only run evaluation.
-                overrides.update(with_runtime_env_path(self.runtime_env_path))
-                self._apply_runtime_env_inference_overrides(overrides)
-                eval_res = _evaluate(
-                    self.env,
-                    artifacts_dir=eval_dir,
-                    env_overrides=overrides,
-                    unattended=str(self.unattended or "strict"),
-                    run_bootstrap_first=True,
-                )
-                if not eval_res.ok:
-                    verify = eval_res.verify
-                    if verify is not None:
-                        parts: list[str] = []
-                        failed_stage = getattr(verify, "failed_stage", None)
-                        if isinstance(failed_stage, str) and failed_stage.strip():
-                            parts.append(f"verify.failed_stage: {failed_stage.strip()}")
-                        metrics_errors = getattr(verify, "metrics_errors", None)
-                        if isinstance(metrics_errors, list):
-                            cleaned = [str(x).strip() for x in metrics_errors if str(x).strip()]
-                            if cleaned:
-                                parts.append("verify.metrics_errors:\n" + "\n".join([f"- {x}" for x in cleaned]))
-                        combined = "\n".join(parts).strip()
-                if eval_res.ok:
-                    if bool(self.require_metrics) and isinstance(eval_res.metrics, dict) and eval_res.metrics.get("ok") is not True:
-                        combined = "metrics.ok_not_true"
-                        try:
-                            (eval_dir / "metrics_contract_error.txt").write_text("metrics.ok_not_true\n", encoding="utf-8")
-                        except Exception:
-                            pass
-                    elif bool(self.require_metrics) and self._audit_mode() != "off":
-                        audit_issue = audit_eval_script_for_hardcoded_nonzero_score(self.env.repo)
-                        audit_issue2 = audit_eval_script_has_real_execution(self.env.repo, extra_markers=self.hint_anchors)
-                        audit_issue3 = audit_eval_script_mentions_any_anchor(self.env.repo, self.hint_anchors)
-                        combined = "\n\n".join([x for x in (audit_issue, audit_issue2, audit_issue3) if x]).strip()
-                        if combined:
-                            try:
-                                (eval_dir / "evaluation_audit_error.txt").write_text(combined + "\n", encoding="utf-8")
-                            except Exception:
-                                pass
-                    if not combined or self._audit_mode() == "warn-only":
-                        return eval_res
-                    eval_res = EvaluationCallResult(
-                        ok=False,
-                        artifacts_dir=eval_res.artifacts_dir,
-                        metrics_path=eval_res.metrics_path,
-                        metrics=eval_res.metrics,
-                        verify=eval_res.verify,
-                    )
-            else:
-                # Repair path: run a full deploy -> rollout -> evaluation pass.
-                deploy_res = _deploy(
-                    self.env,
-                    artifacts_dir=deploy_dir,
-                    env_overrides=overrides,
-                    unattended=str(self.unattended or "strict"),
-                    run_bootstrap_first=True,
-                )
-                if not deploy_res.ok:
-                    if attempt >= int(max(0, repair_iters)):
-                        return EvaluationCallResult(
-                            ok=False,
-                            artifacts_dir=roll_eval_dir,
-                            metrics_path=None,
-                            metrics=None,
-                            verify=deploy_res.verify,
-                        )
-                    repair_contract(
-                        repo=self.env.repo,
-                        model=str(self.opencode_repair_model or self.opencode_model or "").strip(),
-                        opencode_url=str(self.opencode_url or ""),
-                        unattended=str(self.unattended or "strict"),
-                        artifacts_dir=(run_root / f"repair_{attempt+1:02d}").resolve(),
-                        failed_stage=str(getattr(deploy_res.verify, "failed_stage", "") or "deploy"),
-                        deploy_artifacts_dir=deploy_dir,
-                        rollout_eval_artifacts_dir=roll_eval_dir,
-                        llm_kind=str(self.llm_kind or ""),
-                        llm_model=str(self.llm_model or ""),
-                        command_hints=self.command_hints,
-                        extra_context="",
-                        timeout_seconds=int(self.opencode_timeout_seconds or 300),
-                        retry_attempts=int(self.opencode_retry_attempts or 0),
-                        retry_backoff_seconds=float(self.opencode_retry_backoff_seconds or 0.0),
-                        context_length=(int(self.opencode_context_length) if self.opencode_context_length is not None else None),
-                        max_prompt_chars=(int(self.opencode_max_prompt_chars) if self.opencode_max_prompt_chars is not None else None),
-                    )
-                    continue
-
-                self.runtime_env_path = deploy_res.runtime_env_path or (self.env.repo / ".aider_fsm" / "runtime_env.json").resolve()
-                overrides.update(with_runtime_env_path(self.runtime_env_path))
-                self._apply_runtime_env_inference_overrides(overrides)
-                _rollout_res, eval_res = _rollout_and_evaluate(
-                    self.env,
-                    artifacts_dir=roll_eval_dir,
-                    env_overrides=overrides,
-                    unattended=str(self.unattended or "strict"),
-                    run_bootstrap_first=True,
-                )
-                if not eval_res.ok:
-                    verify = eval_res.verify
-                    if verify is not None:
-                        parts: list[str] = []
-                        failed_stage = getattr(verify, "failed_stage", None)
-                        if isinstance(failed_stage, str) and failed_stage.strip():
-                            parts.append(f"verify.failed_stage: {failed_stage.strip()}")
-                        metrics_errors = getattr(verify, "metrics_errors", None)
-                        if isinstance(metrics_errors, list):
-                            cleaned = [str(x).strip() for x in metrics_errors if str(x).strip()]
-                            if cleaned:
-                                parts.append("verify.metrics_errors:\n" + "\n".join([f"- {x}" for x in cleaned]))
-                        combined = "\n".join(parts).strip()
-                if eval_res.ok:
-                    if bool(self.require_metrics) and isinstance(eval_res.metrics, dict) and eval_res.metrics.get("ok") is not True:
-                        combined = "metrics.ok_not_true"
-                        try:
-                            (roll_eval_dir / "metrics_contract_error.txt").write_text("metrics.ok_not_true\n", encoding="utf-8")
-                        except Exception:
-                            pass
-                    elif bool(self.require_metrics) and self._audit_mode() != "off":
-                        audit_issue = audit_eval_script_for_hardcoded_nonzero_score(self.env.repo)
-                        audit_issue2 = audit_eval_script_has_real_execution(self.env.repo, extra_markers=self.hint_anchors)
-                        audit_issue3 = audit_eval_script_mentions_any_anchor(self.env.repo, self.hint_anchors)
-                        combined = "\n\n".join([x for x in (audit_issue, audit_issue2, audit_issue3) if x]).strip()
-                        if combined:
-                            try:
-                                (roll_eval_dir / "evaluation_audit_error.txt").write_text(combined + "\n", encoding="utf-8")
-                            except Exception:
-                                pass
-                    if not combined or self._audit_mode() == "warn-only":
-                        return eval_res
-                    eval_res = EvaluationCallResult(
-                        ok=False,
-                        artifacts_dir=eval_res.artifacts_dir,
-                        metrics_path=eval_res.metrics_path,
-                        metrics=eval_res.metrics,
-                        verify=eval_res.verify,
-                    )
-
-            if attempt >= int(max(0, repair_iters)):
-                return eval_res
-
-            try:
-                _deploy_teardown(
-                    self.env,
-                    artifacts_dir=(run_root / f"teardown_attempt_{attempt+1:02d}" / "deploy_teardown"),
-                    env_overrides=overrides,
-                    unattended=str(self.unattended or "strict"),
-                )
-            except Exception:
-                pass
-            repair_contract(
-                repo=self.env.repo,
-                model=str(self.opencode_repair_model or self.opencode_model or "").strip(),
-                opencode_url=str(self.opencode_url or ""),
-                unattended=str(self.unattended or "strict"),
-                artifacts_dir=(run_root / f"repair_{attempt+1:02d}").resolve(),
-                failed_stage="evaluation",
-                deploy_artifacts_dir=deploy_dir if deploy_dir.exists() else run_root,
-                rollout_eval_artifacts_dir=roll_eval_dir if roll_eval_dir.exists() else eval_dir,
-                llm_kind=str(self.llm_kind or ""),
-                llm_model=str(self.llm_model or ""),
-                command_hints=self.command_hints,
-                extra_context=combined,
-                timeout_seconds=int(self.opencode_timeout_seconds or 300),
-                retry_attempts=int(self.opencode_retry_attempts or 0),
-                retry_backoff_seconds=float(self.opencode_retry_backoff_seconds or 0.0),
-                context_length=(int(self.opencode_context_length) if self.opencode_context_length is not None else None),
-                max_prompt_chars=(int(self.opencode_max_prompt_chars) if self.opencode_max_prompt_chars is not None else None),
-            )
-
-        return eval_res  # pragma: no cover
-
     def evaluate(
         self,
         llm: str | Path | None = None,
@@ -888,7 +571,7 @@ class EnvSession:
     ) -> EvaluationCallResult:
         """中文说明：
         - 含义：执行 evaluation（写出 metrics.json），并在必要时自动 teardown。
-        - 内容：可选接收 `llm` 作为便捷参数（覆盖 session 的 LLM 选择）；内部调用 `_evaluation()`，最后 best-effort 执行 deploy_teardown。
+        - 内容：可选接收 `llm` 作为便捷参数（覆盖 session 的 LLM 选择）；内部执行 evaluation 编排与 repair 重试，最后 best-effort 执行 deploy_teardown。
         - 可简略：否
         - 原因：这是公共 API，承诺“无论成功失败都 best-effort teardown”的语义；内联/改动容易改变对外行为与资源回收保证。
         """
@@ -897,22 +580,405 @@ class EnvSession:
         # 原因：公共 API/关键编排点；规模≈20 行；引用次数≈4（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
         # 证据：位置=runner/env.py:825；类型=method；引用≈4；规模≈20行
         if llm is not None:
-            kind, model_dir, model = _resolve_llm(llm)
-            self.llm_kind = kind
-            self.trained_model_dir = model_dir
-            self.llm_model = model
+            if isinstance(llm, Path):
+                p = llm.expanduser().resolve()
+                if not p.exists():
+                    raise FileNotFoundError(f"llm_path_not_found: {p}")
+                if not p.is_dir():
+                    raise NotADirectoryError(f"llm_not_directory: {p}")
+                self.llm_kind = "local_hf"
+                self.trained_model_dir = p
+                self.llm_model = None
+            else:
+                s = str(llm or "").strip()
+                if not s:
+                    raise ValueError("empty_llm")
+                if s.startswith(("/", "./", "../", "~")):
+                    p = Path(s).expanduser().resolve()
+                    if not p.exists():
+                        raise FileNotFoundError(f"llm_path_not_found: {p}")
+                    if not p.is_dir():
+                        raise NotADirectoryError(f"llm_not_directory: {p}")
+                    self.llm_kind = "local_hf"
+                    self.trained_model_dir = p
+                    self.llm_model = None
+                else:
+                    p2 = Path(s)
+                    if p2.exists() and p2.is_dir():
+                        self.llm_kind = "local_hf"
+                        self.trained_model_dir = p2.expanduser().resolve()
+                        self.llm_model = None
+                    else:
+                        self.llm_kind = "remote"
+                        self.trained_model_dir = None
+                        self.llm_model = s
 
-        run_root = _resolve_run_root(self.env.repo, run_id=self.run_id, artifacts_dir=artifacts_dir)
+        if artifacts_dir is not None:
+            run_root = Path(str(artifacts_dir)).expanduser().resolve()
+        else:
+            run_root = (self.env.repo / ".aider_fsm" / "artifacts" / str(self.run_id) / "env_api").resolve()
+        run_root.mkdir(parents=True, exist_ok=True)
         try:
-            res = self._evaluation(
-                mode=mode,
-                env_overrides=env_overrides,
-                artifacts_dir=artifacts_dir,
-                repair_iters=repair_iters,
-            )
-            return res
+            if not self.llm_kind:
+                raise ValueError("missing_llm: call deploy/rollout with llm=model_dir|model_id first")
+
+            audit_mode = str(self.audit or "on").strip().lower() or "on"
+            if audit_mode not in ("on", "off", "warn-only"):
+                audit_mode = "on"
+
+            for attempt in range(int(max(0, repair_iters)) + 1):
+                deploy_dir = (run_root / f"deploy_attempt_{attempt+1:02d}").resolve()
+                roll_eval_dir = (run_root / f"rollout_evaluation_attempt_{attempt+1:02d}").resolve()
+                eval_dir = (run_root / f"evaluation_attempt_{attempt+1:02d}").resolve()
+
+                overrides = dict(env_overrides or {})
+                base = (
+                    str(overrides.get("OPENAI_BASE_URL") or "").strip()
+                    or str(overrides.get("OPENAI_API_BASE") or "").strip()
+                    or str(os.environ.get("OPENAI_BASE_URL") or "").strip()
+                    or str(os.environ.get("OPENAI_API_BASE") or "").strip()
+                )
+                if base:
+                    base = _ensure_openai_v1_base(base)
+                    overrides.setdefault("OPENAI_BASE_URL", base)
+                    overrides.setdefault("OPENAI_API_BASE", base)
+                overrides.setdefault("AIDER_FSM_RUN_ID", str(self.run_id))
+                overrides.setdefault("AIDER_EVAL_MODE", str(mode or "smoke").strip() or "smoke")
+                if self.command_hints:
+                    overrides.setdefault("AIDER_FSM_REQUIRE_HINTS", "1")
+                    try:
+                        overrides.setdefault(
+                            "AIDER_FSM_HINTS_JSON",
+                            json.dumps(list(self.command_hints[:20]), ensure_ascii=False),
+                        )
+                    except Exception:
+                        overrides.setdefault("AIDER_FSM_HINTS_JSON", "[]")
+                    try:
+                        overrides.setdefault(
+                            "AIDER_FSM_HINT_ANCHORS_JSON",
+                            json.dumps(list(self.hint_anchors[:20]), ensure_ascii=False),
+                        )
+                    except Exception:
+                        overrides.setdefault("AIDER_FSM_HINT_ANCHORS_JSON", "[]")
+                if self.llm_kind:
+                    overrides.setdefault("AIDER_LLM_KIND", str(self.llm_kind))
+                if self.llm_kind == "remote" and self.llm_model:
+                    overrides.setdefault("AIDER_LLM_MODEL", str(self.llm_model))
+                    overrides.setdefault("OPENAI_MODEL", str(self.llm_model))
+                if self.trained_model_dir is not None:
+                    overrides.setdefault("AIDER_TRAINED_MODEL_DIR", str(self.trained_model_dir))
+                if self.runtime_env_path is not None:
+                    overrides.update(with_runtime_env_path(self.runtime_env_path))
+                kind2 = str(self.llm_kind or "").strip() or "local_hf"
+                if kind2 == "remote":
+                    if not self.llm_model:
+                        raise ValueError("missing_llm: call deploy/rollout with llm=model_id first")
+                    overrides["AIDER_LLM_KIND"] = "remote"
+                    overrides["AIDER_LLM_MODEL"] = str(self.llm_model)
+                    overrides.setdefault("OPENAI_MODEL", str(self.llm_model))
+                    overrides.pop("AIDER_TRAINED_MODEL_DIR", None)
+                else:
+                    if self.trained_model_dir is None:
+                        raise ValueError("missing_llm: call deploy/rollout with llm=model_dir first")
+                    overrides["AIDER_LLM_KIND"] = "local_hf"
+                    overrides["AIDER_TRAINED_MODEL_DIR"] = str(self.trained_model_dir)
+                    model_id = str(self.trained_model_dir.name or "").strip()
+                    if model_id:
+                        overrides.setdefault("OPENAI_MODEL", model_id)
+                    overrides.pop("AIDER_LLM_MODEL", None)
+
+                combined = ""
+                if self.runtime_env_path is not None and attempt == 0:
+                    # Fast path: reuse the existing deploy and only run evaluation.
+                    overrides.update(with_runtime_env_path(self.runtime_env_path))
+                    if self.runtime_env_path is not None:
+                        p2 = Path(self.runtime_env_path).expanduser().resolve()
+                        obj2 = _read_json_object(p2)
+                        if obj2 is None:
+                            base2, model2 = None, None
+                        else:
+                            base_raw = ""
+                            model_raw = ""
+                            inf = obj2.get("inference")
+                            if isinstance(inf, dict):
+                                base_raw = str(inf.get("openai_base_url") or inf.get("base_url") or "").strip()
+                                model_raw = str(inf.get("model") or "").strip()
+                            if not base_raw:
+                                svc = obj2.get("service")
+                                if isinstance(svc, dict):
+                                    base_raw = str(svc.get("base_url") or "").strip()
+                            base_v1 = _ensure_openai_v1_base(base_raw) if base_raw else ""
+                            base2, model2 = (base_v1 or None), (model_raw or None)
+
+                        if base2:
+                            explicit = any(
+                                str(overrides.get(k) or "").strip() for k in ("OPENAI_API_BASE", "OPENAI_BASE_URL")
+                            )
+                            # For local_hf, runtime_env.json is the source of truth even if the base env is set (e.g. .env).
+                            if self.llm_kind == "local_hf" or not explicit:
+                                overrides["OPENAI_API_BASE"] = base2
+                                overrides["OPENAI_BASE_URL"] = base2
+                        if model2:
+                            overrides.setdefault("OPENAI_MODEL", model2)
+                            overrides.setdefault("AIDER_LLM_MODEL", model2)
+                        if self.llm_kind == "local_hf":
+                            overrides.setdefault("OPENAI_API_KEY", str(overrides.get("OPENAI_API_KEY") or "local"))
+                    eval_res = _evaluate(
+                        self.env,
+                        artifacts_dir=eval_dir,
+                        env_overrides=overrides,
+                        unattended=str(self.unattended or "strict"),
+                        run_bootstrap_first=True,
+                    )
+                    if not eval_res.ok:
+                        verify = eval_res.verify
+                        if verify is not None:
+                            parts: list[str] = []
+                            failed_stage = getattr(verify, "failed_stage", None)
+                            if isinstance(failed_stage, str) and failed_stage.strip():
+                                parts.append(f"verify.failed_stage: {failed_stage.strip()}")
+                            metrics_errors = getattr(verify, "metrics_errors", None)
+                            if isinstance(metrics_errors, list):
+                                cleaned = [str(x).strip() for x in metrics_errors if str(x).strip()]
+                                if cleaned:
+                                    parts.append("verify.metrics_errors:\n" + "\n".join([f"- {x}" for x in cleaned]))
+                            combined = "\n".join(parts).strip()
+                    if eval_res.ok:
+                        if (
+                            bool(self.require_metrics)
+                            and isinstance(eval_res.metrics, dict)
+                            and eval_res.metrics.get("ok") is not True
+                        ):
+                            combined = "metrics.ok_not_true"
+                            try:
+                                (eval_dir / "metrics_contract_error.txt").write_text(
+                                    "metrics.ok_not_true\n", encoding="utf-8"
+                                )
+                            except Exception:
+                                pass
+                        elif bool(self.require_metrics) and audit_mode != "off":
+                            audit_issue = audit_eval_script_for_hardcoded_nonzero_score(self.env.repo)
+                            audit_issue2 = audit_eval_script_has_real_execution(
+                                self.env.repo, extra_markers=self.hint_anchors
+                            )
+                            audit_issue3 = audit_eval_script_mentions_any_anchor(self.env.repo, self.hint_anchors)
+                            combined = "\n\n".join([x for x in (audit_issue, audit_issue2, audit_issue3) if x]).strip()
+                            if combined:
+                                try:
+                                    (eval_dir / "evaluation_audit_error.txt").write_text(combined + "\n", encoding="utf-8")
+                                except Exception:
+                                    pass
+                        if not combined or audit_mode == "warn-only":
+                            return eval_res
+                        eval_res = EvaluationCallResult(
+                            ok=False,
+                            artifacts_dir=eval_res.artifacts_dir,
+                            metrics_path=eval_res.metrics_path,
+                            metrics=eval_res.metrics,
+                            verify=eval_res.verify,
+                        )
+                else:
+                    # Repair path: run a full deploy -> rollout -> evaluation pass.
+                    deploy_res = _deploy(
+                        self.env,
+                        artifacts_dir=deploy_dir,
+                        env_overrides=overrides,
+                        unattended=str(self.unattended or "strict"),
+                        run_bootstrap_first=True,
+                    )
+                    if not deploy_res.ok:
+                        if attempt >= int(max(0, repair_iters)):
+                            return EvaluationCallResult(
+                                ok=False,
+                                artifacts_dir=roll_eval_dir,
+                                metrics_path=None,
+                                metrics=None,
+                                verify=deploy_res.verify,
+                            )
+                        repair_contract(
+                            repo=self.env.repo,
+                            model=str(self.opencode_repair_model or self.opencode_model or "").strip(),
+                            opencode_url=str(self.opencode_url or ""),
+                            unattended=str(self.unattended or "strict"),
+                            artifacts_dir=(run_root / f"repair_{attempt+1:02d}").resolve(),
+                            failed_stage=str(getattr(deploy_res.verify, "failed_stage", "") or "deploy"),
+                            deploy_artifacts_dir=deploy_dir,
+                            rollout_eval_artifacts_dir=roll_eval_dir,
+                            llm_kind=str(self.llm_kind or ""),
+                            llm_model=str(self.llm_model or ""),
+                            command_hints=self.command_hints,
+                            extra_context="",
+                            timeout_seconds=int(self.opencode_timeout_seconds or 300),
+                            retry_attempts=int(self.opencode_retry_attempts or 0),
+                            retry_backoff_seconds=float(self.opencode_retry_backoff_seconds or 0.0),
+                            context_length=(
+                                int(self.opencode_context_length) if self.opencode_context_length is not None else None
+                            ),
+                            max_prompt_chars=(
+                                int(self.opencode_max_prompt_chars) if self.opencode_max_prompt_chars is not None else None
+                            ),
+                        )
+                        continue
+
+                    self.runtime_env_path = (
+                        deploy_res.runtime_env_path or (self.env.repo / ".aider_fsm" / "runtime_env.json").resolve()
+                    )
+                    overrides.update(with_runtime_env_path(self.runtime_env_path))
+                    if self.runtime_env_path is not None:
+                        p2 = Path(self.runtime_env_path).expanduser().resolve()
+                        obj2 = _read_json_object(p2)
+                        if obj2 is None:
+                            base2, model2 = None, None
+                        else:
+                            base_raw = ""
+                            model_raw = ""
+                            inf = obj2.get("inference")
+                            if isinstance(inf, dict):
+                                base_raw = str(inf.get("openai_base_url") or inf.get("base_url") or "").strip()
+                                model_raw = str(inf.get("model") or "").strip()
+                            if not base_raw:
+                                svc = obj2.get("service")
+                                if isinstance(svc, dict):
+                                    base_raw = str(svc.get("base_url") or "").strip()
+                            base_v1 = _ensure_openai_v1_base(base_raw) if base_raw else ""
+                            base2, model2 = (base_v1 or None), (model_raw or None)
+
+                        if base2:
+                            explicit = any(
+                                str(overrides.get(k) or "").strip() for k in ("OPENAI_API_BASE", "OPENAI_BASE_URL")
+                            )
+                            if self.llm_kind == "local_hf" or not explicit:
+                                overrides["OPENAI_API_BASE"] = base2
+                                overrides["OPENAI_BASE_URL"] = base2
+                        if model2:
+                            overrides.setdefault("OPENAI_MODEL", model2)
+                            overrides.setdefault("AIDER_LLM_MODEL", model2)
+                        if self.llm_kind == "local_hf":
+                            overrides.setdefault("OPENAI_API_KEY", str(overrides.get("OPENAI_API_KEY") or "local"))
+                    _rollout_res, eval_res = _rollout_and_evaluate(
+                        self.env,
+                        artifacts_dir=roll_eval_dir,
+                        env_overrides=overrides,
+                        unattended=str(self.unattended or "strict"),
+                        run_bootstrap_first=True,
+                    )
+                    if not eval_res.ok:
+                        verify = eval_res.verify
+                        if verify is not None:
+                            parts: list[str] = []
+                            failed_stage = getattr(verify, "failed_stage", None)
+                            if isinstance(failed_stage, str) and failed_stage.strip():
+                                parts.append(f"verify.failed_stage: {failed_stage.strip()}")
+                            metrics_errors = getattr(verify, "metrics_errors", None)
+                            if isinstance(metrics_errors, list):
+                                cleaned = [str(x).strip() for x in metrics_errors if str(x).strip()]
+                                if cleaned:
+                                    parts.append("verify.metrics_errors:\n" + "\n".join([f"- {x}" for x in cleaned]))
+                            combined = "\n".join(parts).strip()
+                    if eval_res.ok:
+                        if (
+                            bool(self.require_metrics)
+                            and isinstance(eval_res.metrics, dict)
+                            and eval_res.metrics.get("ok") is not True
+                        ):
+                            combined = "metrics.ok_not_true"
+                            try:
+                                (roll_eval_dir / "metrics_contract_error.txt").write_text(
+                                    "metrics.ok_not_true\n", encoding="utf-8"
+                                )
+                            except Exception:
+                                pass
+                        elif bool(self.require_metrics) and audit_mode != "off":
+                            audit_issue = audit_eval_script_for_hardcoded_nonzero_score(self.env.repo)
+                            audit_issue2 = audit_eval_script_has_real_execution(
+                                self.env.repo, extra_markers=self.hint_anchors
+                            )
+                            audit_issue3 = audit_eval_script_mentions_any_anchor(self.env.repo, self.hint_anchors)
+                            combined = "\n\n".join([x for x in (audit_issue, audit_issue2, audit_issue3) if x]).strip()
+                            if combined:
+                                try:
+                                    (roll_eval_dir / "evaluation_audit_error.txt").write_text(combined + "\n", encoding="utf-8")
+                                except Exception:
+                                    pass
+                        if not combined or audit_mode == "warn-only":
+                            return eval_res
+                        eval_res = EvaluationCallResult(
+                            ok=False,
+                            artifacts_dir=eval_res.artifacts_dir,
+                            metrics_path=eval_res.metrics_path,
+                            metrics=eval_res.metrics,
+                            verify=eval_res.verify,
+                        )
+
+                if attempt >= int(max(0, repair_iters)):
+                    return eval_res
+
+                try:
+                    _deploy_teardown(
+                        self.env,
+                        artifacts_dir=(run_root / f"teardown_attempt_{attempt+1:02d}" / "deploy_teardown"),
+                        env_overrides=overrides,
+                        unattended=str(self.unattended or "strict"),
+                    )
+                except Exception:
+                    pass
+                repair_contract(
+                    repo=self.env.repo,
+                    model=str(self.opencode_repair_model or self.opencode_model or "").strip(),
+                    opencode_url=str(self.opencode_url or ""),
+                    unattended=str(self.unattended or "strict"),
+                    artifacts_dir=(run_root / f"repair_{attempt+1:02d}").resolve(),
+                    failed_stage="evaluation",
+                    deploy_artifacts_dir=deploy_dir if deploy_dir.exists() else run_root,
+                    rollout_eval_artifacts_dir=roll_eval_dir if roll_eval_dir.exists() else eval_dir,
+                    llm_kind=str(self.llm_kind or ""),
+                    llm_model=str(self.llm_model or ""),
+                    command_hints=self.command_hints,
+                    extra_context=combined,
+                    timeout_seconds=int(self.opencode_timeout_seconds or 300),
+                    retry_attempts=int(self.opencode_retry_attempts or 0),
+                    retry_backoff_seconds=float(self.opencode_retry_backoff_seconds or 0.0),
+                    context_length=(int(self.opencode_context_length) if self.opencode_context_length is not None else None),
+                    max_prompt_chars=(int(self.opencode_max_prompt_chars) if self.opencode_max_prompt_chars is not None else None),
+                )
+
+            return eval_res  # pragma: no cover
         finally:
-            overrides = self._base_overrides(mode=mode, extra=env_overrides)
+            overrides = dict(env_overrides or {})
+            base = (
+                str(overrides.get("OPENAI_BASE_URL") or "").strip()
+                or str(overrides.get("OPENAI_API_BASE") or "").strip()
+                or str(os.environ.get("OPENAI_BASE_URL") or "").strip()
+                or str(os.environ.get("OPENAI_API_BASE") or "").strip()
+            )
+            if base:
+                base = _ensure_openai_v1_base(base)
+                overrides.setdefault("OPENAI_BASE_URL", base)
+                overrides.setdefault("OPENAI_API_BASE", base)
+            overrides.setdefault("AIDER_FSM_RUN_ID", str(self.run_id))
+            overrides.setdefault("AIDER_EVAL_MODE", str(mode or "smoke").strip() or "smoke")
+            if self.command_hints:
+                overrides.setdefault("AIDER_FSM_REQUIRE_HINTS", "1")
+                try:
+                    overrides.setdefault("AIDER_FSM_HINTS_JSON", json.dumps(list(self.command_hints[:20]), ensure_ascii=False))
+                except Exception:
+                    overrides.setdefault("AIDER_FSM_HINTS_JSON", "[]")
+                try:
+                    overrides.setdefault(
+                        "AIDER_FSM_HINT_ANCHORS_JSON",
+                        json.dumps(list(self.hint_anchors[:20]), ensure_ascii=False),
+                    )
+                except Exception:
+                    overrides.setdefault("AIDER_FSM_HINT_ANCHORS_JSON", "[]")
+            if self.llm_kind:
+                overrides.setdefault("AIDER_LLM_KIND", str(self.llm_kind))
+            if self.llm_kind == "remote" and self.llm_model:
+                overrides.setdefault("AIDER_LLM_MODEL", str(self.llm_model))
+                overrides.setdefault("OPENAI_MODEL", str(self.llm_model))
+            if self.trained_model_dir is not None:
+                overrides.setdefault("AIDER_TRAINED_MODEL_DIR", str(self.trained_model_dir))
+            if self.runtime_env_path is not None:
+                overrides.update(with_runtime_env_path(self.runtime_env_path))
             try:
                 _deploy_teardown(
                     self.env,
@@ -959,8 +1025,8 @@ def setup(
     # 能否简略：否
     # 原因：公共 API/关键编排点；规模≈83 行；引用次数≈21（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
     # 证据：位置=runner/env.py:870；类型=function；引用≈21；规模≈83行
-    clones_dir = _resolve_path(clones_dir) if clones_dir is not None else None
-    artifacts_dir = _resolve_path(artifacts_dir) if artifacts_dir is not None else None
+    clones_dir = Path(str(clones_dir)).expanduser().resolve() if clones_dir is not None else None
+    artifacts_dir = Path(str(artifacts_dir)).expanduser().resolve() if artifacts_dir is not None else None
     env_handle: EnvHandle = open_env(
         target,
         clones_dir=clones_dir,

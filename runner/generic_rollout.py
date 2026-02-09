@@ -38,63 +38,6 @@ if __package__ in (None, ""):
 else:
     from ._util import _ensure_openai_v1_base, _find_hf_test_parquet, _parse_json_str_list, _read_json_object
 
-
-def _now_iso() -> str:
-    # 作用：内部符号：_now_iso
-    # 能否简略：是
-    # 原因：规模≈2 行；引用次数≈3（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
-    # 证据：位置=runner/generic_rollout.py:16；类型=function；引用≈3；规模≈2行
-    return time.strftime("%Y-%m-%dT%H:%M:%S%z", time.localtime())
-
-
-def _resolve_openai_base(repo_root: Path) -> str:
-    # 作用：内部符号：_resolve_openai_base
-    # 能否简略：部分
-    # 原因：规模≈27 行；引用次数≈2（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
-    # 证据：位置=runner/generic_rollout.py:83；类型=function；引用≈2；规模≈27行
-    base = (os.environ.get("OPENAI_API_BASE") or os.environ.get("OPENAI_BASE_URL") or "").strip()
-    if base:
-        return base.rstrip("/")
-
-    runtime_path = (os.environ.get("AIDER_RUNTIME_ENV_PATH") or "").strip()
-    if runtime_path:
-        p = Path(runtime_path)
-        if not p.is_absolute():
-            p = (repo_root / p).resolve()
-        try:
-            obj = json.loads(p.read_text(encoding="utf-8", errors="replace"))
-        except Exception:
-            obj = None
-        if isinstance(obj, dict):
-            inf = obj.get("inference")
-            if isinstance(inf, dict):
-                b = str(inf.get("openai_base_url") or "").strip()
-                if b:
-                    return b.rstrip("/")
-            svc = obj.get("service")
-            if isinstance(svc, dict):
-                b2 = str(svc.get("base_url") or "").strip()
-                if b2:
-                    return b2.rstrip("/")
-
-    return "https://api.openai.com/v1"
-
-
-def _env_int(name: str) -> int | None:
-    # 作用：内部符号：_env_int
-    # 能否简略：部分
-    # 原因：规模≈9 行；引用次数≈5（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
-    # 证据：位置=runner/generic_rollout.py:119；类型=function；引用≈5；规模≈9行
-    raw = (os.environ.get(name) or "").strip()
-    if not raw:
-        return None
-    try:
-        n = int(raw)
-    except Exception:
-        return None
-    return n if n > 0 else None
-
-
 def _chat_completion(
     *,
     base_url: str,
@@ -113,7 +56,14 @@ def _chat_completion(
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
     if max_tokens is None:
-        max_tokens = _env_int("AIDER_FSM_MAX_TOKENS") or 256
+        raw = (os.environ.get("AIDER_FSM_MAX_TOKENS") or "").strip()
+        n = None
+        if raw:
+            try:
+                n = int(raw)
+            except Exception:
+                n = None
+        max_tokens = n if isinstance(n, int) and n > 0 else 256
     max_tokens = max(1, int(max_tokens))
     payload: dict[str, Any] = {
         "model": model,
@@ -142,67 +92,6 @@ _RE_NUM = re.compile(r"-?\\d+(?:,\\d{3})*(?:\\.\\d+)?(?:/\\d+(?:\\.\\d+)?)?")
 
 
 _RE_FINAL_LINE = re.compile(r"(?im)^\\s*final\\s*[:：]\\s*(?P<ans>.+?)\\s*$")
-
-
-def _norm_number_str(s: str) -> str:
-    # 作用：内部符号：_norm_number_str
-    # 能否简略：部分
-    # 原因：规模≈2 行；引用次数≈4（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
-    # 证据：位置=runner/generic_rollout.py:175；类型=function；引用≈4；规模≈2行
-    return str(s or "").strip().replace(",", "")
-
-
-def _to_fraction(s: str) -> Fraction | None:
-    # 作用：内部符号：_to_fraction
-    # 能否简略：是
-    # 原因：规模≈6 行；引用次数≈3（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
-    # 证据：位置=runner/generic_rollout.py:179；类型=function；引用≈3；规模≈6行
-    ss = _norm_number_str(s)
-    try:
-        return Fraction(ss)
-    except Exception:
-        return None
-
-
-def _extract_final_line(text: str) -> str:
-    # 作用：内部符号：_extract_final_line
-    # 能否简略：是
-    # 原因：规模≈14 行；引用次数≈3（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
-    # 证据：位置=runner/generic_rollout.py:187；类型=function；引用≈3；规模≈14行
-    t = str(text or "").strip()
-    if not t:
-        return ""
-    m = _RE_FINAL_LINE.search(t)
-    if m:
-        ans = str(m.group("ans") or "").strip()
-        if ans:
-            return ans
-    lines = [ln.strip() for ln in t.splitlines() if ln.strip()]
-    if not lines:
-        return t
-    last = lines[-1]
-    return re.sub(r"(?i)^final\\s*[:：]\\s*", "", last).strip()
-
-
-def _norm_answer_str(s: str) -> str:
-    # 作用：内部符号：_norm_answer_str
-    # 能否简略：是
-    # 原因：规模≈4 行；引用次数≈3（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
-    # 证据：位置=runner/generic_rollout.py:203；类型=function；引用≈3；规模≈4行
-    t = str(s or "").strip().lower()
-    t = re.sub(r"\\s+", " ", t)
-    return t
-
-
-def _extract_last_number(text: str) -> str:
-    # 作用：内部符号：_extract_last_number
-    # 能否简略：是
-    # 原因：规模≈5 行；引用次数≈3（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
-    # 证据：位置=runner/generic_rollout.py:209；类型=function；引用≈3；规模≈5行
-    nums = _RE_NUM.findall(str(text or ""))
-    if not nums:
-        return ""
-    return str(nums[-1] or "").strip()
 
 
 def _maybe_rollout_hf_qa_parquet(
@@ -291,20 +180,62 @@ def _maybe_rollout_hf_qa_parquet(
                 errors.append(str(e))
                 completion = ""
 
-            pred = _extract_final_line(completion)
-            gold = _extract_final_line(a)
+            # Extract best-effort final answer line (FINAL: ...). Fall back to the last non-empty line.
+            t = str(completion or "").strip()
+            if not t:
+                pred = ""
+            else:
+                m = _RE_FINAL_LINE.search(t)
+                if m:
+                    ans = str(m.group("ans") or "").strip()
+                    pred = ans if ans else ""
+                else:
+                    lines2 = [ln.strip() for ln in t.splitlines() if ln.strip()]
+                    if not lines2:
+                        pred = t
+                    else:
+                        last = lines2[-1]
+                        pred = re.sub(r"(?i)^final\\s*[:：]\\s*", "", last).strip()
 
-            pred_num = _extract_last_number(pred)
-            gold_num = _extract_last_number(gold)
+            t = str(a or "").strip()
+            if not t:
+                gold = ""
+            else:
+                m = _RE_FINAL_LINE.search(t)
+                if m:
+                    ans = str(m.group("ans") or "").strip()
+                    gold = ans if ans else ""
+                else:
+                    lines2 = [ln.strip() for ln in t.splitlines() if ln.strip()]
+                    if not lines2:
+                        gold = t
+                    else:
+                        last = lines2[-1]
+                        gold = re.sub(r"(?i)^final\\s*[:：]\\s*", "", last).strip()
+
+            nums = _RE_NUM.findall(str(pred or ""))
+            pred_num = str(nums[-1] or "").strip() if nums else ""
+            nums = _RE_NUM.findall(str(gold or ""))
+            gold_num = str(nums[-1] or "").strip() if nums else ""
             if pred_num and gold_num:
-                fp = _to_fraction(pred_num)
-                fg = _to_fraction(gold_num)
+                pred_ss = str(pred_num or "").strip().replace(",", "")
+                gold_ss = str(gold_num or "").strip().replace(",", "")
+                try:
+                    fp = Fraction(pred_ss)
+                except Exception:
+                    fp = None
+                try:
+                    fg = Fraction(gold_ss)
+                except Exception:
+                    fg = None
                 if fp is not None and fg is not None:
                     is_ok = fp == fg
                 else:
-                    is_ok = _norm_number_str(pred_num) == _norm_number_str(gold_num)
+                    is_ok = pred_ss == gold_ss
             else:
-                is_ok = _norm_answer_str(pred) == _norm_answer_str(gold)
+                pred_norm = re.sub(r"\\s+", " ", str(pred or "").strip().lower())
+                gold_norm = re.sub(r"\\s+", " ", str(gold or "").strip().lower())
+                is_ok = pred_norm == gold_norm
 
             reward = 1.0 if is_ok else 0.0
             correct += int(is_ok)
@@ -315,7 +246,7 @@ def _maybe_rollout_hf_qa_parquet(
         return False, {"reason": "no_usable_rows_for_rollout"}
 
     rollout = {
-        "ts": _now_iso(),
+        "ts": time.strftime("%Y-%m-%dT%H:%M:%S%z", time.localtime()),
         "ok": True,
         "mode": mode,
         "counts": {"samples": lines, "correct": correct, "errors": len(errors)},
@@ -325,44 +256,6 @@ def _maybe_rollout_hf_qa_parquet(
     if errors:
         rollout["errors"] = errors[:3]
     return True, rollout
-
-
-def _build_prompts(repo_root: Path, *, n: int) -> list[str]:
-    # 作用：内部符号：_build_prompts
-    # 能否简略：部分
-    # 原因：规模≈27 行；引用次数≈2（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
-    # 证据：位置=runner/generic_rollout.py:336；类型=function；引用≈2；规模≈27行
-    hints = _parse_json_str_list(os.environ.get("AIDER_FSM_HINTS_JSON"))
-    prompts: list[str] = []
-    for h in hints[: max(0, n)]:
-        prompts.append(f"Explain how to run this command and what it does:\n\n{h}")
-    if len(prompts) >= n:
-        return prompts[:n]
-
-    readme = ""
-    for cand in ("README.md", "readme.md", "README.txt"):
-        p = (repo_root / cand).resolve()
-        if p.exists():
-            try:
-                readme = p.read_text(encoding="utf-8", errors="replace")
-            except Exception:
-                readme = ""
-            if len(readme) > 6000:
-                readme = readme[:6000]
-            break
-    if readme:
-        chunks = [c.strip() for c in readme.split("\n\n") if c.strip()]
-        random.shuffle(chunks)
-        for c in chunks:
-            if len(prompts) >= n:
-                break
-            excerpt = c[:800]
-            prompts.append(f"Answer based on this repo excerpt:\n\n{excerpt}")
-    if prompts:
-        return prompts[:n]
-
-    repo_name = repo_root.name
-    return [f"Describe the purpose of the repository `{repo_name}` and how to get started."][:n]
 
 
 def main() -> int:
@@ -383,7 +276,33 @@ def main() -> int:
         limit = 8
     limit = max(1, int(limit))
 
-    base_url = _resolve_openai_base(repo_root)
+    base_url = (os.environ.get("OPENAI_API_BASE") or os.environ.get("OPENAI_BASE_URL") or "").strip()
+    if base_url:
+        base_url = base_url.rstrip("/")
+    else:
+        runtime_path = (os.environ.get("AIDER_RUNTIME_ENV_PATH") or "").strip()
+        if runtime_path:
+            p = Path(runtime_path)
+            if not p.is_absolute():
+                p = (repo_root / p).resolve()
+            try:
+                obj = json.loads(p.read_text(encoding="utf-8", errors="replace"))
+            except Exception:
+                obj = None
+            if isinstance(obj, dict):
+                inf = obj.get("inference")
+                if isinstance(inf, dict):
+                    b = str(inf.get("openai_base_url") or "").strip()
+                    if b:
+                        base_url = b.rstrip("/")
+                if not base_url:
+                    svc = obj.get("service")
+                    if isinstance(svc, dict):
+                        b2 = str(svc.get("base_url") or "").strip()
+                        if b2:
+                            base_url = b2.rstrip("/")
+    if not base_url:
+        base_url = "https://api.openai.com/v1"
     api_key = (os.environ.get("OPENAI_API_KEY") or "").strip() or None
     model = (os.environ.get("AIDER_LLM_MODEL") or os.environ.get("OPENAI_MODEL") or "").strip()
     if not model:
@@ -407,7 +326,36 @@ def main() -> int:
 
     # Default: generic, bounded "repo understanding" prompts (cap for safety).
     prompt_limit = max(1, min(int(limit), 32))
-    prompts = _build_prompts(repo_root, n=prompt_limit)
+    hints = _parse_json_str_list(os.environ.get("AIDER_FSM_HINTS_JSON"))
+    prompts: list[str] = []
+    for h in hints[: max(0, prompt_limit)]:
+        prompts.append(f"Explain how to run this command and what it does:\n\n{h}")
+
+    if len(prompts) < prompt_limit:
+        readme = ""
+        for cand in ("README.md", "readme.md", "README.txt"):
+            p = (repo_root / cand).resolve()
+            if p.exists():
+                try:
+                    readme = p.read_text(encoding="utf-8", errors="replace")
+                except Exception:
+                    readme = ""
+                if len(readme) > 6000:
+                    readme = readme[:6000]
+                break
+        if readme:
+            chunks = [c.strip() for c in readme.split("\n\n") if c.strip()]
+            random.shuffle(chunks)
+            for c in chunks:
+                if len(prompts) >= prompt_limit:
+                    break
+                excerpt = c[:800]
+                prompts.append(f"Answer based on this repo excerpt:\n\n{excerpt}")
+
+    if not prompts:
+        repo_name = repo_root.name
+        prompts = [f"Describe the purpose of the repository `{repo_name}` and how to get started."]
+    prompts = prompts[:prompt_limit]
     samples_path = (artifacts_dir / f"rollout_samples_{int(time.time())}.jsonl").resolve()
 
     samples_written = 0
@@ -432,7 +380,7 @@ def main() -> int:
     rollout_path = (repo_root / ".aider_fsm" / "rollout.json").resolve()
     rollout_path.parent.mkdir(parents=True, exist_ok=True)
     rollout = {
-        "ts": _now_iso(),
+        "ts": time.strftime("%Y-%m-%dT%H:%M:%S%z", time.localtime()),
         "ok": True,
         "mode": mode,
         "counts": {"samples": samples_written, "errors": int(errors_count)},

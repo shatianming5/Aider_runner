@@ -27,30 +27,6 @@ from .subprocess_utils import tail, write_text
 from .types import VerificationResult
 
 
-def _classify_opencode_transport_error(err_text: str) -> str:
-    # 作用：内部符号：_classify_opencode_transport_error
-    # 能否简略：是
-    # 原因：规模≈18 行；引用次数≈3（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
-    # 证据：位置=runner/env_local.py:31；类型=function；引用≈3；规模≈18行
-    low = str(err_text or "").strip().lower()
-    if not low:
-        return ""
-    needles = (
-        "connection refused",
-        "failed to establish a new connection",
-        "connection reset",
-        "connection aborted",
-        "timed out",
-        "timeout",
-        "network is unreachable",
-        "temporary failure in name resolution",
-        "name or service not known",
-    )
-    if any(n in low for n in needles):
-        return "opencode_transport_unavailable"
-    return ""
-
-
 @dataclass(frozen=True)
 class EnvHandle:
     """中文说明：
@@ -138,40 +114,6 @@ def _default_artifacts_dir(repo: Path, *, prefix: str) -> Path:
     return (repo / ".aider_fsm" / "artifacts" / run_id / prefix).resolve()
 
 
-def _list_opencode_models() -> list[str]:
-    """中文说明：
-    - 含义：调用 `opencode models` 获取可用模型列表（去 ANSI）。
-    - 内容：用于默认模型选择与把裸模型名解析到 provider/model。
-    - 可简略：是（与 `runner/cli.py` 重复，可抽公共模块）。
-    """
-    # 作用：中文说明：
-    # 能否简略：部分
-    # 原因：规模≈28 行；引用次数≈4（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
-    # 证据：位置=runner/env_local.py:123；类型=function；引用≈4；规模≈28行
-    if not shutil.which("opencode"):
-        return []
-    try:
-        res = subprocess.run(
-            ["opencode", "models"],
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-    except Exception:
-        return []
-    if res.returncode != 0:
-        return []
-    ansi = re.compile(r"\x1b\[[0-9;]*m")
-    models: list[str] = []
-    for raw in (res.stdout or "").splitlines():
-        line = ansi.sub("", raw).strip()
-        if not line or "/" not in line:
-            continue
-        models.append(line)
-    return models
-
-
 def _resolve_model(raw_model: str) -> str:
     """中文说明：
     - 含义：规范化模型参数为 `provider/model`。
@@ -182,6 +124,26 @@ def _resolve_model(raw_model: str) -> str:
     # 能否简略：否
     # 原因：规模≈58 行；引用次数≈3（静态近似，可能包含注释/字符串）；多点复用或涉及副作用/协议验收，过度简化会增加回归风险或降低可审计性
     # 证据：位置=runner/env_local.py:153；类型=function；引用≈3；规模≈58行
+    candidates: list[str] = []
+    if shutil.which("opencode"):
+        try:
+            res = subprocess.run(
+                ["opencode", "models"],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+        except Exception:
+            res = None
+        if res is not None and int(res.returncode) == 0:
+            ansi = re.compile(r"\x1b\[[0-9;]*m")
+            for raw in (res.stdout or "").splitlines():
+                line = ansi.sub("", raw).strip()
+                if not line or "/" not in line:
+                    continue
+                candidates.append(line)
+
     s = str(raw_model or "").strip()
     if not s:
         env_default = str(
@@ -192,21 +154,21 @@ def _resolve_model(raw_model: str) -> str:
             or ""
         ).strip()
         if env_default:
-            return _resolve_model(env_default)
-        candidates = _list_opencode_models()
-        if "myproxy/deepseek-v3.2" in candidates:
-            return "myproxy/deepseek-v3.2"
-        if "openai/deepseek-v3.2" in candidates:
-            return "openai/deepseek-v3.2"
-        if "openai/gpt-4o-mini" in candidates:
+            s = env_default
+        else:
+            if "myproxy/deepseek-v3.2" in candidates:
+                return "myproxy/deepseek-v3.2"
+            if "openai/deepseek-v3.2" in candidates:
+                return "openai/deepseek-v3.2"
+            if "openai/gpt-4o-mini" in candidates:
+                return "openai/gpt-4o-mini"
+            if "opencode/gpt-5-nano" in candidates:
+                return "opencode/gpt-5-nano"
+            if candidates:
+                return candidates[0]
             return "openai/gpt-4o-mini"
-        if "opencode/gpt-5-nano" in candidates:
-            return "opencode/gpt-5-nano"
-        if candidates:
-            return candidates[0]
-        return "openai/gpt-4o-mini"
+
     if "/" in s:
-        candidates = _list_opencode_models()
         if not candidates:
             return s
         # If the exact provider/model exists locally, keep it.
@@ -224,7 +186,7 @@ def _resolve_model(raw_model: str) -> str:
                     return m
             return matches[0]
         return s
-    candidates = _list_opencode_models()
+
     matches = [m for m in candidates if m.split("/", 1)[1] == s]
     if matches:
         for m in matches:
@@ -381,7 +343,24 @@ def open_env(
                         write_text(out_dir / "scaffold_agent_error.txt", scaffold_err + "\n")
 
                     if not pipeline_path.exists():
-                        transport_reason = _classify_opencode_transport_error(scaffold_err)
+                        low = str(scaffold_err or "").strip().lower()
+                        if low and any(
+                            n in low
+                            for n in (
+                                "connection refused",
+                                "failed to establish a new connection",
+                                "connection reset",
+                                "connection aborted",
+                                "timed out",
+                                "timeout",
+                                "network is unreachable",
+                                "temporary failure in name resolution",
+                                "name or service not known",
+                            )
+                        ):
+                            transport_reason = "opencode_transport_unavailable"
+                        else:
+                            transport_reason = ""
                         if transport_reason:
                             last_failure_reason = f"missing_pipeline_yml; {transport_reason}"
                         else:
@@ -435,7 +414,24 @@ def open_env(
                     )
 
                 if not pipeline_ok:
-                    root_cause = _classify_opencode_transport_error(scaffold_err)
+                    low = str(scaffold_err or "").strip().lower()
+                    if low and any(
+                        n in low
+                        for n in (
+                            "connection refused",
+                            "failed to establish a new connection",
+                            "connection reset",
+                            "connection aborted",
+                            "timed out",
+                            "timeout",
+                            "network is unreachable",
+                            "temporary failure in name resolution",
+                            "name or service not known",
+                        )
+                    ):
+                        root_cause = "opencode_transport_unavailable"
+                    else:
+                        root_cause = ""
                     if not provenance_written:
                         try:
                             report = build_contract_provenance_report(

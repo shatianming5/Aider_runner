@@ -21,33 +21,6 @@ _HF_HOSTS = {"huggingface.co", "www.huggingface.co"}
 _PREFERRED_CLONES_BASE = Path("/data/tiansha/aider_fsm_targets")
 
 
-def _default_clones_base() -> Path:
-    """Prefer /data for large clone/snapshot caches, fallback to system temp."""
-    # 作用：Prefer /data for large clone/snapshot caches, fallback to system temp.
-    # 能否简略：部分
-    # 原因：规模≈21 行；引用次数≈3（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
-    # 证据：位置=runner/repo_resolver.py:26；类型=function；引用≈3；规模≈21行
-    candidates = [
-        _PREFERRED_CLONES_BASE,
-        Path(tempfile.gettempdir()) / "aider_fsm_targets",
-    ]
-    for raw in candidates:
-        base = raw.expanduser().resolve()
-        try:
-            base.mkdir(parents=True, exist_ok=True)
-        except Exception:
-            continue
-        probe = base / ".aider_fsm_write_probe"
-        try:
-            probe.write_text("ok\n", encoding="utf-8")
-            probe.unlink()
-            return base
-        except Exception:
-            continue
-    # Last resort: temp dir path even if writability probe failed above.
-    return (Path(tempfile.gettempdir()) / "aider_fsm_targets").expanduser().resolve()
-
-
 def is_probably_repo_url(repo: str) -> bool:
     """中文说明：
     - 含义：判断字符串是否“看起来像”一个可获取的远程 repo（URL/SSH/owner/repo）。
@@ -85,68 +58,6 @@ def normalize_repo_url(repo: str) -> str:
         # Default to GitHub for shorthand `owner/repo`.
         return f"https://github.com/{s}.git"
     return s
-
-
-def _repo_slug(repo_url: str) -> str:
-    """中文说明：
-    - 含义：从 repo URL 生成一个适合作为本地目录名的 slug。
-    - 内容：提取 owner/repo（尽力），替换非法字符为 `_`，并限制长度；用于 `<clones_base>/<slug>_<ts>`。
-    - 可简略：可能（命名策略可调整；但需要保持稳定与避免路径注入）。
-    """
-    # 作用：中文说明：
-    # 能否简略：是
-    # 原因：规模≈18 行；引用次数≈2（静态近似，可能包含注释/字符串）；逻辑短且低复用，适合 inline/合并以减少符号面
-    # 证据：位置=runner/repo_resolver.py:84；类型=function；引用≈2；规模≈18行
-    s = repo_url.strip().rstrip("/")
-    if s.startswith("git@") and ":" in s:
-        s = s.split(":", 1)[1]
-    if "://" in s:
-        s = s.split("://", 1)[1]
-    s = s.rstrip(".git")
-    parts = [p for p in re.split(r"[/:]", s) if p]
-    name = parts[-1] if parts else "repo"
-    owner = parts[-2] if len(parts) >= 2 else "remote"
-    slug = f"{owner}_{name}"
-    slug = re.sub(r"[^A-Za-z0-9_.-]+", "_", slug)
-    return slug[:80]
-
-
-def _parse_github_owner_repo(url: str) -> tuple[str, str] | None:
-    """中文说明：
-    - 含义：从 GitHub URL/SSH 地址解析出 (owner, repo)。
-    - 内容：支持 https://github.com/owner/repo(.git)、git@github.com:owner/repo(.git)、ssh://git@github.com/owner/repo(.git)。
-    - 可简略：可能（只为 GitHub ZIP fallback 服务；若去掉 fallback 可删除）。
-    """
-    # 作用：中文说明：
-    # 能否简略：部分
-    # 原因：规模≈32 行；引用次数≈2（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
-    # 证据：位置=runner/repo_resolver.py:104；类型=function；引用≈2；规模≈32行
-    s = str(url or "").strip()
-    if not s:
-        return None
-
-    # https://github.com/<owner>/<repo>(.git)?
-    m = re.match(r"^https?://([^/]+)/([^/]+)/([^/]+?)(?:\.git)?/?$", s)
-    if m:
-        host, owner, repo = m.group(1), m.group(2), m.group(3)
-        if host.lower() in _GITHUB_ARCHIVE_HOSTS:
-            return owner, repo
-
-    # git@github.com:<owner>/<repo>(.git)?
-    m = re.match(r"^git@([^:]+):([^/]+)/([^/]+?)(?:\.git)?$", s)
-    if m:
-        host, owner, repo = m.group(1), m.group(2), m.group(3)
-        if host.lower() in _GITHUB_ARCHIVE_HOSTS:
-            return owner, repo
-
-    # ssh://git@github.com/<owner>/<repo>(.git)?
-    m = re.match(r"^ssh://git@([^/]+)/([^/]+)/([^/]+?)(?:\.git)?/?$", s)
-    if m:
-        host, owner, repo = m.group(1), m.group(2), m.group(3)
-        if host.lower() in _GITHUB_ARCHIVE_HOSTS:
-            return owner, repo
-
-    return None
 
 
 def _download_file(
@@ -199,92 +110,6 @@ def _download_file(
         return False, f"OSError: {str(e)}"
 
 
-def _extract_github_zip(zip_path: Path, *, extract_dir: Path, repo_name: str) -> Path:
-    """中文说明：
-    - 含义：解压 GitHub archive zip，并返回解压出的 repo 根目录路径。
-    - 内容：兼容 `repo-main/`、`repo-master/` 等目录结构；若结构不符合预期则抛错。
-    - 可简略：是（仅 GitHub ZIP fallback 需要；若去掉 fallback 可删除）。
-    """
-    # 作用：中文说明：
-    # 能否简略：部分
-    # 原因：规模≈23 行；引用次数≈2（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
-    # 证据：位置=runner/repo_resolver.py:184；类型=function；引用≈2；规模≈23行
-    extract_dir.mkdir(parents=True, exist_ok=True)
-    try:
-        with zipfile.ZipFile(zip_path, "r") as zf:
-            zf.extractall(extract_dir)
-    except zipfile.BadZipFile as e:
-        raise RuntimeError(f"invalid_zip: {e}") from e
-
-    dirs = [p for p in extract_dir.iterdir() if p.is_dir()]
-    if len(dirs) == 1:
-        return dirs[0]
-
-    prefix = f"{repo_name}-"
-    candidates = [d for d in dirs if d.name.startswith(prefix)]
-    if len(candidates) == 1:
-        return candidates[0]
-
-    raise RuntimeError(f"unexpected_zip_layout: dirs={[d.name for d in dirs]}")
-
-
-def _parse_hf_dataset(url: str) -> tuple[str, str] | None:
-    """中文说明：
-    - 含义：识别 Hugging Face dataset URL，并解析出 (namespace, name)。
-    - 内容：匹配 `https://huggingface.co/datasets/<namespace>/<name>` 路径；用于触发“HF 快照下载”逻辑。
-    - 可简略：是（只在需要支持 HF dataset URL 时才需要）。
-    """
-    # 作用：中文说明：
-    # 能否简略：部分
-    # 原因：规模≈22 行；引用次数≈2（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
-    # 证据：位置=runner/repo_resolver.py:209；类型=function；引用≈2；规模≈22行
-    u = str(url or "").strip()
-    if not u.startswith(("http://", "https://")):
-        return None
-    parsed = urlparse(u)
-    host = (parsed.hostname or "").strip().lower()
-    if host not in _HF_HOSTS:
-        return None
-    parts = [p for p in (parsed.path or "").split("/") if p]
-    if len(parts) < 3:
-        return None
-    if parts[0] != "datasets":
-        return None
-    namespace, name = parts[1].strip(), parts[2].strip()
-    if not namespace or not name:
-        return None
-    return namespace, name
-
-
-def _hf_dataset_api_info(
-    namespace: str,
-    name: str,
-    *,
-    token: str | None,
-    timeout_seconds: int = 20,
-) -> dict[str, object]:
-    """中文说明：
-    - 含义：调用 Hugging Face datasets API 获取数据集元信息（sha/siblings/private/gated 等）。
-    - 内容：请求 `https://huggingface.co/api/datasets/{namespace}/{name}`；若提供 token 则加 Bearer；返回解析后的 dict。
-    - 可简略：是（只在 HF dataset 支持场景需要）。
-    """
-    # 作用：中文说明：
-    # 能否简略：部分
-    # 原因：规模≈23 行；引用次数≈2（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
-    # 证据：位置=runner/repo_resolver.py:239；类型=function；引用≈2；规模≈23行
-    url = f"https://huggingface.co/api/datasets/{namespace}/{name}"
-    headers: dict[str, str] = {"Accept": "application/json", "User-Agent": "opencode-fsm/1.0"}
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-    req = Request(url, headers=headers, method="GET")
-    with urlopen(req, timeout=timeout_seconds) as resp:
-        raw = resp.read()
-    data = json.loads(raw.decode("utf-8", errors="replace"))
-    if not isinstance(data, dict):
-        raise RuntimeError("hf_api_invalid_json")
-    return data
-
-
 def _download_hf_dataset_snapshot(
     *,
     namespace: str,
@@ -317,7 +142,16 @@ def _download_hf_dataset_snapshot(
         or None
     )
     try:
-        info = _hf_dataset_api_info(namespace, name, token=token)
+        url = f"https://huggingface.co/api/datasets/{namespace}/{name}"
+        headers: dict[str, str] = {"Accept": "application/json", "User-Agent": "opencode-fsm/1.0"}
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        req = Request(url, headers=headers, method="GET")
+        with urlopen(req, timeout=20) as resp:
+            raw = resp.read()
+        info = json.loads(raw.decode("utf-8", errors="replace"))
+        if not isinstance(info, dict):
+            raise RuntimeError("hf_api_invalid_json")
     except HTTPError as e:
         return False, f"hf_api_http_error {getattr(e, 'code', '')}: {e}"
     except URLError as e:
@@ -452,7 +286,23 @@ def _archive_clone_github(
                 continue
 
             try:
-                root = _extract_github_zip(zip_path, extract_dir=extract_dir, repo_name=repo)
+                extract_dir.mkdir(parents=True, exist_ok=True)
+                try:
+                    with zipfile.ZipFile(zip_path, "r") as zf:
+                        zf.extractall(extract_dir)
+                except zipfile.BadZipFile as e:
+                    raise RuntimeError(f"invalid_zip: {e}") from e
+
+                dirs = [p for p in extract_dir.iterdir() if p.is_dir()]
+                if len(dirs) == 1:
+                    root = dirs[0]
+                else:
+                    prefix = f"{repo}-"
+                    candidates2 = [d for d in dirs if d.name.startswith(prefix)]
+                    if len(candidates2) == 1:
+                        root = candidates2[0]
+                    else:
+                        raise RuntimeError(f"unexpected_zip_layout: dirs={[d.name for d in dirs]}")
             except Exception as e:
                 errors.append(f"{url}: extract_failed: {e}")
                 continue
@@ -574,13 +424,48 @@ def prepare_repo(repo_arg: str, *, clones_dir: Path | None = None) -> PreparedRe
     if not is_probably_repo_url(raw):
         raise FileNotFoundError(f"repo path not found: {raw}")
 
-    hf = _parse_hf_dataset(raw)
+    hf = None
+    u = str(raw or "").strip()
+    if u.startswith(("http://", "https://")):
+        parsed = urlparse(u)
+        host = (parsed.hostname or "").strip().lower()
+        if host in _HF_HOSTS:
+            parts = [p for p in (parsed.path or "").split("/") if p]
+            if len(parts) >= 3 and parts[0] == "datasets":
+                namespace = parts[1].strip()
+                name = parts[2].strip()
+                if namespace and name:
+                    hf = (namespace, name)
+
+    base = clones_dir
+    if base is None:
+        candidates = [
+            _PREFERRED_CLONES_BASE,
+            Path(tempfile.gettempdir()) / "aider_fsm_targets",
+        ]
+        base2 = None
+        for raw_base in candidates:
+            b = raw_base.expanduser().resolve()
+            try:
+                b.mkdir(parents=True, exist_ok=True)
+            except Exception:
+                continue
+            probe = b / ".aider_fsm_write_probe"
+            try:
+                probe.write_text("ok\n", encoding="utf-8")
+                probe.unlink()
+                base2 = b
+                break
+            except Exception:
+                continue
+        if base2 is None:
+            base2 = (Path(tempfile.gettempdir()) / "aider_fsm_targets").expanduser().resolve()
+        base = base2
+    base = base.expanduser().resolve()
+    base.mkdir(parents=True, exist_ok=True)
+
     if hf:
         namespace, name = hf
-        base = clones_dir or _default_clones_base()
-        base = base.expanduser().resolve()
-        base.mkdir(parents=True, exist_ok=True)
-
         if clones_dir is not None:
             prefix = f"hf_{namespace}_{name}"
             reused = _find_reusable_clone(base, prefix=prefix)
@@ -597,11 +482,18 @@ def prepare_repo(repo_arg: str, *, clones_dir: Path | None = None) -> PreparedRe
         return PreparedRepo(repo=dest.resolve(), cloned_from=raw)
 
     url = normalize_repo_url(raw)
-    base = clones_dir or _default_clones_base()
-    base = base.expanduser().resolve()
-    base.mkdir(parents=True, exist_ok=True)
-
-    slug = _repo_slug(url)
+    s2 = url.strip().rstrip("/")
+    if s2.startswith("git@") and ":" in s2:
+        s2 = s2.split(":", 1)[1]
+    if "://" in s2:
+        s2 = s2.split("://", 1)[1]
+    s2 = s2.rstrip(".git")
+    parts2 = [p for p in re.split(r"[/:]", s2) if p]
+    name2 = parts2[-1] if parts2 else "repo"
+    owner2 = parts2[-2] if len(parts2) >= 2 else "remote"
+    slug = f"{owner2}_{name2}"
+    slug = re.sub(r"[^A-Za-z0-9_.-]+", "_", slug)
+    slug = slug[:80]
     if clones_dir is not None:
         reused = _find_reusable_clone(base, prefix=slug)
         if reused is not None:
@@ -641,7 +533,23 @@ def prepare_repo(repo_arg: str, *, clones_dir: Path | None = None) -> PreparedRe
         # Clean up partial clones to avoid confusing fallbacks.
         shutil.rmtree(dest, ignore_errors=True)
 
-        owner_repo = _parse_github_owner_repo(url)
+        owner_repo = None
+        s3 = str(url or "").strip()
+        if s3:
+            # https://github.com/<owner>/<repo>(.git)?
+            m = re.match(r"^https?://([^/]+)/([^/]+)/([^/]+?)(?:\\.git)?/?$", s3)
+            if m and str(m.group(1) or "").lower() in _GITHUB_ARCHIVE_HOSTS:
+                owner_repo = (m.group(2), m.group(3))
+            else:
+                # git@github.com:<owner>/<repo>(.git)?
+                m = re.match(r"^git@([^:]+):([^/]+)/([^/]+?)(?:\\.git)?$", s3)
+                if m and str(m.group(1) or "").lower() in _GITHUB_ARCHIVE_HOSTS:
+                    owner_repo = (m.group(2), m.group(3))
+                else:
+                    # ssh://git@github.com/<owner>/<repo>(.git)?
+                    m = re.match(r"^ssh://git@([^/]+)/([^/]+)/([^/]+?)(?:\\.git)?/?$", s3)
+                    if m and str(m.group(1) or "").lower() in _GITHUB_ARCHIVE_HOSTS:
+                        owner_repo = (m.group(2), m.group(3))
         if owner_repo:
             owner, name = owner_repo
             ok, detail = _archive_clone_github(owner=owner, repo=name, dest=dest, env=env)

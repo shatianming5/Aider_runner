@@ -43,35 +43,6 @@ def audit_eval_script_for_hardcoded_nonzero_score(repo: Path) -> str | None:
     return "hardcoded_nonzero_score_in_.aider_fsm/stages/evaluation.sh:\n" + "\n".join(bad)
 
 
-def _looks_like_python_exec(line_lower: str) -> bool:
-    # 作用：内部符号：_looks_like_python_exec
-    # 能否简略：部分
-    # 原因：规模≈23 行；引用次数≈2（静态近似，可能包含注释/字符串）；可通过拆分/去重复/抽 helper 减少复杂度，但不建议完全内联
-    # 证据：位置=runner/eval_audit.py:43；类型=function；引用≈2；规模≈23行
-    s = line_lower.replace('"', "").replace("'", "").strip()
-    if not s:
-        return False
-    # Accept common shell exec prefix (e.g., `exec "$PY" -m ...`).
-    if s.startswith("exec "):
-        s = s[len("exec ") :].strip()
-    # Common heredoc pattern for embedded python:
-    #   "$PY" - <<'PY'
-    #   python3 - <<PY
-    if "<<" in s:
-        if "<<" in s and ("<<py" in s or "<<-py" in s or "<<\tpy" in s or "<< 'py'" in s or "<<'py'" in s):
-            if "python" in s or "$py" in s or "$aider_fsm_python" in s:
-                return True
-    # Accept `$AIDER_FSM_PYTHON` and also wrapper vars like `$PYTHON`.
-    if s.startswith("$") or s.startswith("python3") or s.startswith("python"):
-        if " -m " in s:
-            return True
-        if " -c " in s:
-            return True
-        if ".py" in s:
-            return True
-    return False
-
-
 def audit_eval_script_has_real_execution(repo: Path, *, extra_markers: list[str] | None = None) -> str | None:
     """Heuristic: evaluation.sh should *run* something beyond writing JSON.
 
@@ -131,8 +102,26 @@ def audit_eval_script_has_real_execution(repo: Path, *, extra_markers: list[str]
             continue
         if re.match(r"^[a-z_][a-z0-9_]*=", first):
             continue
-        if _looks_like_python_exec(low):
-            return None
+        s = low.replace('"', "").replace("'", "").strip()
+        if s:
+            # Accept common shell exec prefix (e.g., `exec "$PY" -m ...`).
+            if s.startswith("exec "):
+                s = s[len("exec ") :].strip()
+            # Common heredoc pattern for embedded python:
+            #   "$PY" - <<'PY'
+            #   python3 - <<PY
+            if "<<" in s:
+                if "<<" in s and ("<<py" in s or "<<-py" in s or "<<\tpy" in s or "<< 'py'" in s or "<<'py'" in s):
+                    if "python" in s or "$py" in s or "$aider_fsm_python" in s:
+                        return None
+            # Accept `$AIDER_FSM_PYTHON` and also wrapper vars like `$PYTHON`.
+            if s.startswith("$") or s.startswith("python3") or s.startswith("python"):
+                if " -m " in s:
+                    return None
+                if " -c " in s:
+                    return None
+                if ".py" in s:
+                    return None
         if any(m in low for m in markers):
             return None
     return (
